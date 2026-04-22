@@ -1,67 +1,100 @@
-我没能直接打开你给的微信公众号原文链接，但根据多篇对同一篇内容的拆解，文章描述的 **queryLoop** 本质上是 Claude Code 的 **Agent 主循环**：它不断执行“准备上下文 → 调模型 → 执行工具 → 把结果喂回模型 → 决定是否继续”，直到任务完成或触发终止条件。文中还强调了它为什么用 **AsyncGenerator** 做实时事件流输出，以及它在上下文压缩、工具并行执行、fallback、预算与熔断方面的设计。([掘金][1])
+我没法直接打开你给的微信文章原文，所以这里是基于可访问的参考资料对 **queryloop / Query Loop** 的交叉整理：主要依据 AzrMedit0x 的源码拆解文章，并用公开的 Claude Code 技术解析与第三方总结做了相互印证。整体上，**query loop 不是“调用一次模型拿一次结果”**，而是一个围绕消息流、工具调用、压缩与恢复机制构建的**状态机循环**。([azrmedit0x.top][1])
 
-下面用流程图来介绍这套系统：
+## 一张流程图看懂 queryloop
 
 ```mermaid
 flowchart TD
-    A[用户输入 / 上层 QueryEngine 调用] --> B[进入 queryLoop]
-    B --> C[初始化状态 State<br/>读取 messages、systemPrompt、toolUseContext、budget、maxTurns 等]
+    A[开始一次 query] --> B[冻结本轮稳定输入<br/>systemPrompt / userContext / systemContext / tool gate / fallbackModel / QueryConfig]
+    B --> C[初始化可变状态 State<br/>messages / toolUseContext / autoCompactTracking / pending summaries / turnCount / transition]
+    C --> D[组装模型请求<br/>历史消息 + 上下文 + 附件 + tool schema]
+    D --> E[调用模型并消费流式输出]
 
-    C --> D[构造本轮上下文 messagesForQuery]
-    D --> D1[getMessagesAfterCompactBoundary<br/>只取最近 compact 之后的消息]
-    D1 --> D2[applyToolResultBudget<br/>裁剪过大的工具结果]
-    D2 --> D3[snipCompact<br/>裁掉中间不重要历史]
-    D3 --> D4[microcompact<br/>清理旧 tool_result 但尽量保留缓存命中]
-    D4 --> D5[contextCollapse<br/>把远古历史折叠成摘要]
-    D5 --> D6[autocompact<br/>接近窗口上限时做整体摘要压缩]
+    E --> F{流中出现什么?}
+    F --> F1[普通 assistant 内容]
+    F --> F2[thinking / redacted thinking]
+    F --> F3[tool_use blocks]
+    F --> F4[API error / 截断信号]
 
-    D6 --> E{是否超过上下文硬限制?}
-    E -- 是 --> Z1[返回 blocking_limit / 停止]
-    E -- 否 --> F[callModel 调用模型]
+    F1 --> G[持续写入 transcript message]
+    F2 --> G
+    G --> H{是否有 tool_use?}
 
-    F --> G[流式 yield 事件给 UI<br/>RequestStart / StreamEvent / AssistantMessage]
-    G --> H{模型是否发出 tool_use?}
+    F3 --> I[进入工具阶段<br/>执行 services/tools 并把 tool result 写回 messages]
+    I --> J[模型拿到 tool result 后进入下一轮思考]
+    J --> D
 
-    H -- 否 --> I{是否还有继续理由?}
-    I -- 否 --> Z2[返回 end_turn / 停止]
-    I -- 是 --> D
+    H -- 否 --> K{是否满足继续条件?}
+    H -- 是 --> I
 
-    H -- 是 --> J[并行执行工具]
-    J --> K[生成 tool_result / ToolUseSummaryMessage]
-    K --> L[把工具结果写回消息历史]
-    L --> M{是否中断 / fallback / 达到上限?}
+    K -- 是 --> D
+    K -- 否 --> L[回合结束]
 
-    M -- 用户中断 --> Z3[abort / 停止]
-    M -- 达到 maxTurns --> Z4[MaxTurns / 停止]
-    M -- 触发 fallback --> N[切换 fallbackModel<br/>必要时 tombstone 回滚无效流式消息]
-    N --> D
-    M -- 正常继续 --> D
+    E --> M{是否触发恢复路径?}
+    M -- max_output_tokens --> M1[恢复逻辑<br/>暂不向上层暴露中间错误]
+    M1 --> D
+
+    M -- prompt too long / token 紧张 --> M2[compact / reactive compact<br/>摘要历史消息后继续]
+    M2 --> D
+
+    M -- fallback 场景 --> M3[切换 fallback 模型 / 清理孤儿状态]
+    M3 --> D
+
+    L --> N[执行 stop hooks<br/>session memory / extract memories / prompt suggestion / 其他 side effects]
+    N --> O[输出最终消息流与终止结果]
 ```
 
-可以把它理解成 4 个层次：
+## 用业务语言解释这张图
 
-**1. 外层是一个“会转圈的 Agent 循环”**
-`queryLoop` 不是一次请求一次响应，而是一个持续迭代的循环。每一轮模型看到最新上下文和工具结果，决定下一步要不要继续调用工具；只要它还在“行动”，循环就继续。([掘金][1])
+### 1) 先“冻住”本轮不会变的输入
 
-**2. 进入模型前，要先做“上下文瘦身”**
-文章把这一段描述成一个多级漏斗：先截断 compact 边界前的历史，再裁剪超大的工具结果，再做 snip / microcompact / contextCollapse / autocompact。目标不是一次性暴力压缩，而是按成本从低到高逐层处理，尽可能在不损伤关键信息的前提下，把上下文控制在模型窗口内。([掘金][1])
+进入 `query()` 后，系统先快照化一组稳定输入，比如 `systemPrompt`、`userContext`、`systemContext`、是否允许用工具、fallback model 和 `QueryConfig`。连一些运行期开关也会被快照化，例如是否启用流式工具执行、是否发送 tool use summary、是否开启 fast mode。这样做是为了让**同一轮 query 的行为稳定**，不被中途设置变化打断。([azrmedit0x.top][1])
 
-**3. 中间是“模型流式输出 + 工具执行”**
-模型调用开始后，`queryLoop` 会边收 token 边 `yield` 事件给 UI，所以界面能实时显示“正在思考”“正在输出”。当模型产出完整的 `tool_use` 指令后，系统开始执行工具，并把工具结果重新塞回消息历史，进入下一轮推理。这个设计让系统表现得像一个会观察、行动、再观察的 agent。([掘金][1])
+### 2) 再维护一份显式可变状态
 
-**4. 最外面包着一层“防失控机制”**
-文章特别强调 4 类保护：
+`query.ts` 会显式维护 `State`，其中包括 `messages`、`toolUseContext`、`autoCompactTracking`、`pendingToolUseSummary`、`stopHookActive`、`turnCount`、`transition` 等。也就是说，query loop 的推进依赖的是**显式状态迁移**，而不是散落在代码各处的隐式全局变量。([azrmedit0x.top][1])
 
-* **maxTurns**：防模型无限循环。
-* **blocking limit check**：防上下文溢出。
-* **abortController**：用户中断时，模型调用和工具执行都能立刻停。
-* **fallback + tombstone**：流式过程中若主模型失败，可切到降级模型，并把已经输出但不完整的无效消息从 transcript 里回滚掉。([掘金][1])
+### 3) 主循环每轮都做四件事
 
-如果你想把这张图拿去做汇报，我建议直接用这一句总结：
+每一轮的主干非常稳定：
 
-> **queryLoop = 一个带实时输出、上下文压缩、工具闭环和熔断保护的 Agent 主循环。**
-> 它让系统不断执行“理解任务 → 调工具 → 观察结果 → 继续推理”，直到完成任务或命中停止条件。 ([掘金][1])
+1. 组装模型输入：把历史消息、上下文、附件和工具 schema 拼成请求。
+2. 消费模型的流式输出：输出里可能有普通文本、thinking、tool use、错误信号。
+3. 执行工具：如果模型发出了 `tool_use`，就进入工具层执行，并把 `tool_result` 写回消息历史。
+4. 判断是否继续：如果刚拿到工具结果、需要 continuation、发生输出截断恢复，或者刚做完 compact，就继续下一轮。([azrmedit0x.top][1])
 
-我也可以把这张图改成更适合 PPT 的“横向泳道图”版本。
+### 4) 它把“消息”当成第一公民
 
-[1]: https://juejin.cn/post/7627001206729392169?utm_source=chatgpt.com "queryLoop：Claude Code 源码的 Agent 运作引擎queryLoop ..."
+在这个体系里，request start、assistant streaming 片段、tool use / tool result、compact 边界、恢复消息、tool use summary，都会进入同一条事件流。因此它既能被 TUI 消费，也能被 SDK/结构化 I/O 消费，还能服务远端会话同步。换句话说，**query loop 的统一抽象不是函数回调，而是消息流**。([azrmedit0x.top][1])
+
+### 5) 工具调用不是外挂，而是主路径的一部分
+
+AzrMedit0x 的 Query Loop 文和后续“工具契约与注册 / 工具执行与状态传播”系列共同说明：工具不是简单函数，而是带有 schema、提示文案和执行约束的运行时对象；query loop 看到 `tool_use` 后，会把控制权转到工具执行层，再把结果重新塞回消息历史，驱动模型继续思考。公开技术解析还补充了一个关键点：在 Claude Code 的工程实践里，某些“并发安全”的读类工具甚至可以在流式输出尚未结束时就提前执行，以减少总延迟。([azrmedit0x.top][2])
+
+### 6) 恢复路径不是异常分支，而是内建能力
+
+这是 query loop 最值得借鉴的地方之一。资料显示它至少内建了几类恢复路径：
+
+* `max_output_tokens`：有专门恢复逻辑，并且会**暂不把中间错误暴露给上层**，避免调用方误以为整个会话已经失败。
+* `prompt too long` 或 token 紧张：进入 `compact / reactive compact`，把历史消息摘要化，再继续执行。
+* 模型不可用或过载：会触发 fallback 相关路径。
+
+这说明在它的设计里，**压缩、恢复、fallback 都是主路径的一部分**，而不是边角补丁。([azrmedit0x.top][1])
+
+### 7) 一轮结束后还没完全结束
+
+回合完成后，`stop hooks` 还可能触发 session memory、memory extraction、prompt suggestion 等后处理逻辑。所以“query 完成”不只是得到最后一条 assistant message，而是**完成整轮副作用处理后**才真正结束。([azrmedit0x.top][1])
+
+## 你可以把 queryloop 理解成这个公式
+
+**queryloop = 消息状态机 + 模型流式采样 + 工具行动闭环 + 压缩/恢复机制 + 回合结束钩子**。这个总结与 AzrMedit0x 对 `query.ts` 的描述一致，也和公开技术解析中“外层 QueryEngine 管会话、内层 queryLoop 管一次完整思考-行动-观察循环”的说法相吻合。([azrmedit0x.top][1])
+
+## 如果你要把它讲给团队听，可以用这三句话
+
+1. **它不是一次请求，而是一个 while-loop 状态机。**
+2. **它的核心单位不是字符串，而是消息流。**
+3. **工具、压缩、恢复都不是异常处理，而是主执行路径。** ([azrmedit0x.top][1])
+
+要是你愿意，我下一条可以直接把它改写成一版更适合 PPT 的“4 页讲稿版”，或者画成更适合文档粘贴的横向流程图。
+
+[1]: https://www.azrmedit0x.top/2025/03/31/src-architecture/02-core-runtime/01-query-loop/ "02.1 Query Loop | AzrMedit0x,冥思构造体"
+[2]: https://www.azrmedit0x.top/2025/03/31/src-architecture/02-core-runtime/02-tool-contract-and-registry/ "02.2 工具契约与注册 | AzrMedit0x,冥思构造体"
