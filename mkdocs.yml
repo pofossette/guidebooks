@@ -27,3 +27,24 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Agent Dev: agent-dev/
+  - Algorithm: algo/
+  - Database: db/
+  - Study Path: dev-study-path/
+  - Project:
+    - TrapMap:
+      - Quick Start: project/trapmap/快速了解.md
+      - Selection: project/trapmap/选型.md
+      - Requirements: project/trapmap/需求和思考.md
+      - Pitfalls: project/trapmap/踩坑/
+      - Docs: project/trapmap/docs/
+    - Archlinux Missionary:
+      - Quick Start: project/archlinux-missionary/快速了解.md
+      - Selection: project/archlinux-missionary/选型.md
+      - Requirements: project/archlinux-missionary/需求和思考.md
+      - Status: project/archlinux-missionary/现状与目标差异清单.md
+      - Packages: project/archlinux-missionary/包说明与选型附录.md
+      - Docs: project/archlinux-missionary/docs/

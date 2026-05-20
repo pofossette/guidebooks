@@ -1,0 +1,6 @@
+[submodule "docs/project/trapmap/_repo"]
+	path = docs/project/trapmap/_repo
+	url = https://github.com/pofossette/TrapMap-for-vibing.git
+[submodule "docs/project/archlinux-missionary/_repo"]
+	path = docs/project/archlinux-missionary/_repo
+	url = https://github.com/pofossette/archlinux-missionary.git
