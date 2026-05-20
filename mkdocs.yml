@@ -28,6 +28,10 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
 
+exclude_docs: |
+  project/*/_repo/**/!(*.md)
+  project/*/_repo/*/
+
 nav:
   - Home: index.md
   - Agent Dev: agent-dev/
@@ -40,11 +44,80 @@ nav:
       - Selection: project/trapmap/选型.md
       - Requirements: project/trapmap/需求和思考.md
       - Pitfalls: project/trapmap/踩坑/
-      - Docs: project/trapmap/docs/
+      - TrapMap Docs:
+        - README: project/trapmap/_repo/docs/README.md
+        - PACKAGES: project/trapmap/_repo/docs/PACKAGES.md
+        - Architecture:
+          - Overview: project/trapmap/_repo/docs/architecture/ARCHITECTURE.md
+          - API: project/trapmap/_repo/docs/architecture/API.md
+          - CLI: project/trapmap/_repo/docs/architecture/CLI.md
+          - Data Pipeline: project/trapmap/_repo/docs/architecture/DATA_TYPES_PIPELINE.md
+          - Deployment: project/trapmap/_repo/docs/architecture/DEPLOYMENT.md
+          - Ingestion: project/trapmap/_repo/docs/architecture/DOCUMENT_INGESTION_PIPELINE.md
+          - Flow: project/trapmap/_repo/docs/architecture/FLOW.md
+          - Graph Retrieval: project/trapmap/_repo/docs/architecture/GRAPH_RETRIEVAL.md
+          - Hybrid Extraction: project/trapmap/_repo/docs/architecture/HYBRID_GRAPH_EXTRACTION.md
+          - Modules: project/trapmap/_repo/docs/architecture/MODULES.md
+          - Rendering: project/trapmap/_repo/docs/architecture/RENDERING.md
+          - Troubleshooting: project/trapmap/_repo/docs/architecture/TROUBLESHOOTING.md
+        - Guides:
+          - Getting Started: project/trapmap/_repo/docs/guides/GETTING_STARTED.md
+          - Code Guide: project/trapmap/_repo/docs/guides/CODE_GUIDE.md
+          - Contributing: project/trapmap/_repo/docs/guides/CONTRIBUTING.md
+          - Client Integration: project/trapmap/_repo/docs/guides/CLIENT_INTEGRATION.md
+        - Operations:
+          - Testing: project/trapmap/_repo/docs/operations/TESTING.md
+          - Security: project/trapmap/_repo/docs/operations/SECURITY.md
+          - CI/CD: project/trapmap/_repo/docs/operations/CI_CD.md
+          - Environment: project/trapmap/_repo/docs/operations/ENVIRONMENT.md
+          - Prompt Caching: project/trapmap/_repo/docs/operations/PROMPT_CACHING.md
+          - Prompt Providers: project/trapmap/_repo/docs/operations/PROMPT_PROVIDERS.md
+        - Reference:
+          - Glossary: project/trapmap/_repo/docs/reference/GLOSSARY.md
+          - Data Model: project/trapmap/_repo/docs/reference/DATA_MODEL.md
+          - API Surface: project/trapmap/_repo/docs/reference/api-surface.md
+          - Performance: project/trapmap/_repo/docs/reference/PERFORMANCE.md
     - Archlinux Missionary:
       - Quick Start: project/archlinux-missionary/快速了解.md
       - Selection: project/archlinux-missionary/选型.md
       - Requirements: project/archlinux-missionary/需求和思考.md
       - Status: project/archlinux-missionary/现状与目标差异清单.md
       - Packages: project/archlinux-missionary/包说明与选型附录.md
-      - Docs: project/archlinux-missionary/docs/
+      - Missionary Docs:
+        - README: project/archlinux-missionary/_repo/docs/README.md
+        - Roadmap: project/archlinux-missionary/_repo/docs/ROADMAP.md
+        - Architecture: project/archlinux-missionary/_repo/docs/architecture.md
+        - Glossary: project/archlinux-missionary/_repo/docs/glossary.md
+        - Constraints:
+          - Overview: project/archlinux-missionary/_repo/docs/constraints/README.md
+          - Module Boundaries: project/archlinux-missionary/_repo/docs/constraints/01-module-boundaries.md
+          - State Machine: project/archlinux-missionary/_repo/docs/constraints/02-state-machine.md
+          - State Exports: project/archlinux-missionary/_repo/docs/constraints/03-state-exports.md
+          - System Prompts: project/archlinux-missionary/_repo/docs/constraints/04-system-prompts.md
+          - Reuse & Composition: project/archlinux-missionary/_repo/docs/constraints/05-reuse-and-composition.md
+        - Design:
+          - Overview: project/archlinux-missionary/_repo/docs/design/README.md
+          - Agent Workflow: project/archlinux-missionary/_repo/docs/design/agent-workflow.md
+          - Approval Security: project/archlinux-missionary/_repo/docs/design/approval-security.md
+          - CLI Tools: project/archlinux-missionary/_repo/docs/design/cli-tools.md
+          - Context Knowledge: project/archlinux-missionary/_repo/docs/design/context-knowledge.md
+          - Data Storage: project/archlinux-missionary/_repo/docs/design/data-storage.md
+          - Events Testing: project/archlinux-missionary/_repo/docs/design/events-testing.md
+          - Packaging: project/archlinux-missionary/_repo/docs/design/packaging.md
+          - Skills Providers: project/archlinux-missionary/_repo/docs/design/skills-providers.md
+        - Guides:
+          - Developer Quickstart: project/archlinux-missionary/_repo/docs/guides/developer-quickstart.md
+          - Codebase Tour: project/archlinux-missionary/_repo/docs/guides/codebase-tour.md
+          - Configuration: project/archlinux-missionary/_repo/docs/guides/configuration.md
+          - CLI Reference: project/archlinux-missionary/_repo/docs/guides/cli-reference.md
+          - Development Manual: project/archlinux-missionary/_repo/docs/guides/development-manual.md
+          - Operations: project/archlinux-missionary/_repo/docs/guides/operations.md
+          - Skills Developer Guide: project/archlinux-missionary/_repo/docs/guides/skills-developer-guide.md
+          - Testing: project/archlinux-missionary/_repo/docs/guides/testing.md
+          - Package Status: project/archlinux-missionary/_repo/docs/guides/package-status.md
+        - Runbooks:
+          - Debugging: project/archlinux-missionary/_repo/docs/runbooks/debugging-session.md
+          - Eval Pipeline: project/archlinux-missionary/_repo/docs/runbooks/eval-pipeline.md
+        - References:
+          - OpenCode Architecture: project/archlinux-missionary/_repo/docs/references/opencode-ARCHITECTURE.md
+          - XML Methodology: project/archlinux-missionary/_repo/docs/references/xml-system-prompt-methodology.md
