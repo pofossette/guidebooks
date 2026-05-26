@@ -33,34 +33,43 @@
 
 ### 1.1 四项目质量关卡总览
 
+**GBrain 质量关卡：**
+
 ```mermaid
 flowchart TD
-    subgraph GBrain["GBrain 质量关卡"]
-        G1["① 内容健康检查<br/>assessContentSanity()"] --> G2["② 内容哈希去重<br/>SHA-256 over 标题+正文+标签"]
-        G2 --> G3["③ 嵌入跳过标记<br/>超大页面标记 embed-skip"]
-        G3 --> G4["④ 事实提取资格门<br/>≥80字 + 合法类型 + 非梦境生成"]
-        G4 --> G5["⑤ LLM 结构化提取<br/>显著性过滤 + 置信度评分"]
-    end
+    G1["① 内容健康检查 assessContentSanity()"] --> G2["② 内容哈希去重 SHA-256"]
+    G2 --> G3["③ 嵌入跳过标记 embed-skip"]
+    G3 --> G4["④ 事实提取资格门 ≥80字 + 合法类型"]
+    G4 --> G5["⑤ LLM 结构化提取 显著性过滤 + 置信度"]
+```
 
-    subgraph Viking["OpenViking 质量关卡"]
-        V1["① LLM 提取<br/>含/不含标准的 prompt"] --> V2["② Pydantic 类型校验<br/>FaultTolerantBaseModel"]
-        V2 --> V3["③ JSON 解析容错<br/>失败重试一次"]
-        V3 --> V4["④ 未读文件检查<br/>强制先读后写"]
-        V4 --> V5["⑤ Schema 约束<br/>operation_mode: add_only"]
-    end
+**OpenViking 质量关卡：**
 
-    subgraph ReMe["ReMe 质量关卡"]
-        R1["① 信息过滤<br/>InfoFilterOp 评分 0-3"] --> R2["② 输入校验<br/>拒绝空字段"]
-        R2 --> R3["③ LLM 质量评估<br/>MemoryValidationOp"]
-        R3 --> R4["④ 阈值过滤<br/>validation_threshold ≥ 0.5"]
-        R4 --> R5["⑤ 内容去重<br/>哈希 + 余弦相似度"]
-    end
+```mermaid
+flowchart TD
+    V1["① LLM 提取 含/不含标准 prompt"] --> V2["② Pydantic 类型校验 FaultTolerantBaseModel"]
+    V2 --> V3["③ JSON 解析容错 失败重试一次"]
+    V3 --> V4["④ 未读文件检查 强制先读后写"]
+    V4 --> V5["⑤ Schema 约束 operation_mode: add_only"]
+```
 
-    subgraph Letta["Letta 质量关卡"]
-        L1["① 技术清洗<br/>去除空字节 / 行号污染"] --> L2["② 只读保护<br/>read_only 块不可改"]
-        L2 --> L3["③ 精确匹配替换<br/>old_string 唯一性检查"]
-        L3 --> L4["④ Prompt 引导<br/>软性 LLM 自律"]
-    end
+**ReMe 质量关卡：**
+
+```mermaid
+flowchart TD
+    R1["① 信息过滤 InfoFilterOp 评分 0-3"] --> R2["② 输入校验 拒绝空字段"]
+    R2 --> R3["③ LLM 质量评估 MemoryValidationOp"]
+    R3 --> R4["④ 阈值过滤 threshold ≥ 0.5"]
+    R4 --> R5["⑤ 内容去重 哈希 + 余弦相似度"]
+```
+
+**Letta 质量关卡：**
+
+```mermaid
+flowchart TD
+    L1["① 技术清洗 去除空字节/行号污染"] --> L2["② 只读保护 read_only 块不可改"]
+    L2 --> L3["③ 精确匹配替换 old_string 唯一性"]
+    L3 --> L4["④ Prompt 引导 软性 LLM 自律"]
 ```
 
 ### 1.2 GBrain：最严格的多层确定性质检
@@ -392,52 +401,61 @@ flowchart LR
 
 ### 4.1 检索管线对比
 
+**GBrain 检索管线：**
+
 ```mermaid
 flowchart TD
-    subgraph GBrain["GBrain 检索管线"]
-        GQ["用户查询"] --> G1["意图分类<br/>entity/temporal/event/general"]
-        G1 --> G2["查询扩展<br/>Haiku 生成 2 个变体"]
-        G2 --> G3["关键词搜索<br/>pg_trgm + ts_rank"]
-        G2 --> G4["向量搜索<br/>pgvector 余弦距离"]
-        G3 --> G5["RRF 融合 (K=60)"]
-        G4 --> G5
-        G5 --> G6["源感知加权<br/>originals 1.5x / daily 0.8x"]
-        G6 --> G7["后融合 Boost<br/>反链/显著度/时效/图信号"]
-        G7 --> G8["外部 Reranker"]
-        G8 --> G9["去重 + Token 预算"]
-    end
+    GQ["用户查询"] --> G1["意图分类 entity/temporal/event/general"]
+    G1 --> G2["查询扩展 Haiku 生成 2 个变体"]
+    G2 --> G3["关键词搜索 pg_trgm + ts_rank"]
+    G2 --> G4["向量搜索 pgvector 余弦距离"]
+    G3 --> G5["RRF 融合 K=60"]
+    G4 --> G5
+    G5 --> G6["源感知加权 originals 1.5x / daily 0.8x"]
+    G6 --> G7["后融合 Boost 反链/显著度/时效/图信号"]
+    G7 --> G8["外部 Reranker"]
+    G8 --> G9["去重 + Token 预算"]
+```
 
-    subgraph Viking["OpenViking 检索管线"]
-        VQ["用户查询"] --> V1["意图分析<br/>LLM 生成 QueryPlan"]
-        V1 --> V2["全局向量搜索"]
-        V2 --> V3["层级递归搜索<br/>优先队列 BFS"]
-        V3 --> V4["分数传播<br/>α×child + (1-α)×parent"]
-        V4 --> V5["Reranking<br/>THINKING 模式"]
-        V5 --> V6["热度融合<br/>频率 + 7天半衰期时效"]
-        V6 --> V7["关系遍历<br/>关联资源/技能"]
-    end
+**OpenViking 检索管线：**
 
-    subgraph ReMe["ReMe 检索管线"]
-        RQ["用户查询"] --> R1["查询构建<br/>LLM 生成优化查询"]
-        R1 --> R2["向量余弦搜索<br/>+ 内容去重"]
-        R2 --> R3{"记忆类型?"}
-        R3 -->|个人| R4["LLM 语义排序"]
-        R3 -->|任务| R5["LLM 重排序"]
-        R4 --> R6["融合重排序<br/>类型×时间×分数"]
-        R5 --> R7["分数阈值过滤"]
-        R6 --> R8["LLM 改写<br/>优化上下文表述"]
-        R7 --> R8
-        R8 --> R9["合并输出"]
-    end
+```mermaid
+flowchart TD
+    VQ["用户查询"] --> V1["意图分析 LLM 生成 QueryPlan"]
+    V1 --> V2["全局向量搜索"]
+    V2 --> V3["层级递归搜索 优先队列 BFS"]
+    V3 --> V4["分数传播 α×child + (1-α)×parent"]
+    V4 --> V5["Reranking THINKING 模式"]
+    V5 --> V6["热度融合 频率 + 7天半衰期时效"]
+    V6 --> V7["关系遍历 关联资源/技能"]
+```
 
-    subgraph Letta["Letta 检索"]
-        LQ["用户查询"] --> L1{"记忆层?"}
-        L1 -->|Core Memory| L2["始终可见<br/>嵌入 system prompt"]
-        L1 -->|Archival| L3["混合搜索<br/>向量 + 全文 RRF"]
-        L1 -->|Conversation| L4["消息历史搜索<br/>ILIKE / Turbopuffer"]
-        L3 --> L5["Tag 过滤"]
-        L4 --> L6["时间范围过滤"]
-    end
+**ReMe 检索管线：**
+
+```mermaid
+flowchart TD
+    RQ["用户查询"] --> R1["查询构建 LLM 生成优化查询"]
+    R1 --> R2["向量余弦搜索 + 内容去重"]
+    R2 --> R3{"记忆类型?"}
+    R3 -->|个人| R4["LLM 语义排序"]
+    R3 -->|任务| R5["LLM 重排序"]
+    R4 --> R6["融合重排序 类型×时间×分数"]
+    R5 --> R7["分数阈值过滤"]
+    R6 --> R8["LLM 改写 优化上下文表述"]
+    R7 --> R8
+    R8 --> R9["合并输出"]
+```
+
+**Letta 检索：**
+
+```mermaid
+flowchart TD
+    LQ["用户查询"] --> L1{"记忆层?"}
+    L1 -->|Core Memory| L2["始终可见 嵌入 system prompt"]
+    L1 -->|Archival| L3["混合搜索 向量 + 全文 RRF"]
+    L1 -->|Conversation| L4["消息历史搜索 ILIKE / Turbopuffer"]
+    L3 --> L5["Tag 过滤"]
+    L4 --> L6["时间范围过滤"]
 ```
 
 ### 4.2 GBrain：信号最丰富的混合检索
