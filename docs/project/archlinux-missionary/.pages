@@ -1,8 +1,8 @@
-title: Archlinux Missionary
+title: archlinux-missionary
 nav:
+  - index.md
   - 快速了解.md
-  - 选型.md
   - 需求和思考.md
+  - 选型.md
   - 现状与目标差异清单.md
   - 包说明与选型附录.md
-  - docs

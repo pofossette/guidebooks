@@ -1,1 +1,6 @@
-title: Algorithm
+title: 算法笔记
+nav:
+  - index.md
+  - binanry-tree.md
+  - graph.md
+  - divide-conquer-dp-binary-search.md

@@ -1,2 +1,9 @@
-sort_type: natural
-ignore_case: true
+nav:
+  - index.md
+  - dev-study-path
+  - agent-dev
+  - project
+  - coding-strategy
+  - algo
+  - prompt.md
+  - world_model.md

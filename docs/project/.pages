@@ -1,4 +1,5 @@
-title: Project
+title: 项目专题
 nav:
-  - trapmap
+  - index.md
   - archlinux-missionary
+  - trapmap

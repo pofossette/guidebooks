@@ -1,7 +1,6 @@
-title: TrapMap
+title: trapmap
 nav:
+  - index.md
   - 快速了解.md
-  - 选型.md
   - 需求和思考.md
-  - 踩坑
-  - docs
+  - 选型.md
