@@ -1,7 +1,2 @@
-nav:
-  - index.md
-  - agent-dev
-  - algo
-  - dev-study-path
-  - project
-  - prompt.md
+sort_type: natural
+ignore_case: true
