@@ -1,5 +1,7 @@
 # Claude Code / Codex / OpenCode 沙箱安全能力对比分析
 
+> 基于 Claude Code 源码（`src/utils/sandbox/sandbox-adapter.ts`）、Codex（Rust）源码、OpenCode（TypeScript）源码交叉验证
+
 ## 一、总体架构对比
 
 | 维度 | Claude Code | Codex (OpenAI) | OpenCode |
@@ -220,7 +222,7 @@ pub enum SandboxType {
 - 使用 Landlock ABI V5
 - 对 `/` 和所有文件系统根应用只读规则
 - 对 `/dev/null` 和指定的可写根应用读写规则
-- 通过 `features.use_legacy_landlock = true` 显式启用
+- 通过 `--use-legacy-landlock` 命令行参数显式启用
 
 ### 3.3 macOS -- Seatbelt (sandbox-exec)
 
@@ -280,7 +282,7 @@ pub(crate) enum BwrapNetworkMode {
 - `.codex` -- Codex 配置
 
 **Guardian 策略**：
-- 定义数据泄露、凭证探测、持久化安全削弱、破坏性操作等风险分类
+- 定义数据泄露、凭证探测、持久化安全弱化、破坏性操作等风险分类（注：这是 `policy.md` 中的 LLM 提示策略，非代码级强制规则）
 - 实施 allow/deny 规则，基于风险等级和用户授权级别
 
 ### 3.7 内置 Bubblewrap
@@ -354,7 +356,8 @@ export function containsPath(filepath: string, ctx: InstanceContext): boolean {
 |-----------|---------|
 | **build**（默认） | 几乎全部允许，`doom_loop` 和 `external_directory` 需确认 |
 | **plan**（规划模式） | 禁止所有编辑工具，仅允许写入特定计划文件 |
-| **explore**（探索） | 仅允许只读工具（grep、glob、list、bash、read、webfetch、websearch） |
+| **general**（通用） | 继承 defaults + 禁止 todowrite |
+| **explore**（探索） | 仅显式允许只读工具（grep、glob、list、bash、read、webfetch、websearch），doom_loop 和 external_directory 继承默认 ask 策略 |
 | **compaction/title/summary** | 全部禁止 |
 
 ### 4.6 Shell 超时机制

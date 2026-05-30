@@ -306,6 +306,8 @@ flowchart TD
 
 ### 5.2 读取时 RAG —— 两套检索系统
 
+> **后端验证说明**：以下向量存储后端列表已与 agentscope-ai/ReMe 开源仓库核实。PostgreSQL+pgvector、Hologres 等后端在开源版本中未找到实现，可能为内部版本或计划扩展。
+
 #### 文件记忆 RAG: MemorySearch (混合检索)
 
 ```mermaid
@@ -355,7 +357,7 @@ flowchart TD
 
     stage1 --> stage2
 
-    stage2 --> BACKENDS["向量存储后端可选:<br>LocalVectorStore (纯 Python + numpy)<br>ChromaVectorStore / QdrantVectorStore<br>ESVectorStore / PGVectorStore<br>HologresStore / ObvecVectorStore / ZvecVectorStore"]
+    stage2 --> BACKENDS["向量存储后端可选:<br>LocalVectorStore (纯 Python + numpy)<br>ChromaVectorStore / QdrantVectorStore<br>ESVectorStore<br><i>(PGVectorStore / HologresStore 等为内部版本或计划扩展)</i>"]
 
     style INPUT fill:#e8f4f8,stroke:#4a9
     style stage1 fill:#fff3cd,stroke:#ffc107

@@ -2,6 +2,7 @@
 
 > 对比对象：Claude Code、OpenAI Codex、OpenCode
 > 分析日期：2025-05-21
+> 基于 Claude Code 源码（`src/tools/FileEditTool/`、`src/tools/FileWriteTool/`）、Codex（Rust）源码、OpenCode（TypeScript）源码交叉验证
 
 ---
 
@@ -102,13 +103,13 @@ Claude Code 用的是"写临时文件 → 改权限 → 原子重命名"三步�
 
 **调用链**：`apply_patch()` → `derive_new_contents_from_chunks()` → `fs.read_file_text()` → `fs.read_file()`
 
-`DirectFileSystem::read_file`（`codex-rs/exec-server/src/local_file_system.rs:242`）的流程：
+`DirectFileSystem::read_file`（`codex-rs/exec-server/src/local_file_system.rs:241`）的流程：
 
 1. `tokio::fs::metadata(path)` — 异步 stat，检查文件大小不超过 512 MiB（`MAX_READ_FILE_BYTES`）
 2. `tokio::fs::read(path)` — 异步读取整个文件到 `Vec<u8>`
 3. `String::from_utf8(bytes)` — 将字节解码为 Rust String
 
-通过 `ExecutorFileSystem` trait 抽象（`codex-rs/file-system/src/lib.rs:134`），支持不同的文件系统实现（本地/沙箱）。
+通过 `ExecutorFileSystem` trait 抽象（`codex-rs/file-system/src/lib.rs:135`），支持不同的文件系统实现（本地/沙箱）。
 
 ### OpenCode
 
@@ -158,7 +159,7 @@ tokio::fs::write(path.as_path(), contents).await
 
 一步到位，直接覆盖目标文件。没有临时文件、没有原子操作。
 
-如果父目录不存在，`write_file_with_missing_parent_retry()`（`lib.rs:614`）会捕获 `NotFound` 错误，递归创建目录后重试。
+如果父目录不存在，`write_file_with_missing_parent_retry()`（`lib.rs:616`）会捕获 `NotFound` 错误，递归创建目录后重试。
 
 ### OpenCode — 直接覆写
 
@@ -266,7 +267,7 @@ Pass 4: Unicode 归一化 — 弯引号→直引号、长破折号→减号、�
 
 **上下文定位**（`change_context`）：每个 chunk 可以带一个 `@@ context` 标记（如类名或方法名），先定位到上下文行，再从该位置开始搜索要替换的行。
 
-**倒序应用**（`apply_replacements()`，`lib.rs:784`）：
+**倒序应用**（`apply_replacements()`，`lib.rs:786`）：
 替换操作从后往前依次应用，避免前面的增删导致后面行号偏移。
 
 **行级 splice**：
@@ -595,7 +596,7 @@ Codex 的文件编辑围绕一个核心工具 `apply_patch` 构建，使用自�
 
 ## 解析器
 
-### `parse_patch()`（`parser.rs:126`）
+### `parse_patch()`（`parser.rs:128`）
 
 两种模式：
 - **严格模式**：要求精确的 `*** Begin Patch` / `*** End Patch` 分隔符
@@ -612,7 +613,7 @@ struct UpdateFileChunk {
 }
 ```
 
-### `StreamingPatchParser`（`streaming_parser.rs:19`）
+### `StreamingPatchParser`（`streaming_parser.rs:22`）
 
 逐字符增量解析器，通过 `push_delta()` 接受任意大小的输入块。用于模型还在流式输出 patch 时就实时解析，每 500ms 更新一次进度。
 
@@ -645,7 +646,7 @@ Pass 4: Unicode 归一化 — 弯引号→直引号、长破折号→减号、�
 - 空 pattern 始终匹配
 - pattern 行数 > 文件行数时立即返回 None
 
-### 替换计算 — `compute_replacements()`（`lib.rs:692`）
+### 替换计算 — `compute_replacements()`（`lib.rs:694`）
 
 对每个 chunk：
 1. 如果有 `change_context` → 先用 `seek_sequence()` 定位上下文行，然后跳过
@@ -655,7 +656,7 @@ Pass 4: Unicode 归一化 — 弯引号→直引号、长破折号→减号、�
 
 所有替换按 `start_index` 升序排列。
 
-### 替换应用 — `apply_replacements()`（`lib.rs:784`）
+### 替换应用 — `apply_replacements()`（`lib.rs:786`）
 
 **关键设计：从后往前应用**
 
@@ -667,7 +668,7 @@ for (start_idx, old_len, new_lines) in replacements.iter().rev() {
 
 从后往前可以避免前面的增删导致后面的索引偏移。最后确保文件有尾部换行。
 
-### 文件写入 — `apply_hunks_to_files()`（`lib.rs:362`）
+### 文件写入 — `apply_hunks_to_files()`（`lib.rs:364`）
 
 - **AddFile**：写入新内容，目录不存在时递归创建
 - **DeleteFile**：读取内容（用于 delta 跟踪），验证不是目录，然后删除
@@ -679,7 +680,7 @@ for (start_idx, old_len, new_lines) in replacements.iter().rev() {
 
 **EOF 空行重试**：当 `old_lines` 末尾是空字符串（表示文件末尾换行哨兵），且搜索失败时，去掉末尾空元素重试。
 
-**缺失父目录**：`write_file_with_missing_parent_retry()`（`lib.rs:614`）捕获 `NotFound`，递归创建目录后重试。
+**缺失父目录**：`write_file_with_missing_parent_retry()`（`lib.rs:616`）捕获 `NotFound`，递归创建目录后重试。
 
 **部分失败跟踪**：`AppliedPatchDelta` 结构跟踪哪些变更已提交。`exact` 标志在写操作可能部分修改文件时设为 false。
 
@@ -867,7 +868,7 @@ Pass 4: Unicode 标点标准化
 
 这与 Codex 的 `seek_sequence()` 策略几乎相同。
 
-#### 替换计算 — `computeReplacements()`（`patch/index.ts:312`）
+#### 替换计算 — `computeReplacements()`（`patch/index.ts:349`）
 
 ```typescript
 function computeReplacements(originalLines, filePath, chunks) {
@@ -883,7 +884,7 @@ function computeReplacements(originalLines, filePath, chunks) {
 }
 ```
 
-#### 应用替换（`patch/index.ts:349`）
+#### 应用替换（`patch/index.ts:405`）
 
 计算出替换元组后，按位置应用。类似 Codex 的方式。
 

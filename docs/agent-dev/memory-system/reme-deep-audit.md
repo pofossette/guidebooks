@@ -2,6 +2,8 @@
 
 > Sub-Agent C (ReMe Auditor) 审计成果
 > 审计日期：2026-05-21
+>
+> **2026-05-30 验证更新**：核心架构描述（AgentScope 依赖、ReMeLight/ReMe 双系统、pre_reasoning_hook 四阶段管道、Turn 完整性保证、三级压缩、混合检索 0.7+0.3）已通过 agentscope-ai/ReMe 仓库验证为准确。向量存储后端列表已修正——PostgreSQL+pgvector、Hologres、Zvec、Obvec 在开源仓库中未找到对应实现。类继承链已补充 BaseMemory 等中间层说明。
 
 ---
 
@@ -12,7 +14,7 @@ ReMe 是一个 AI Agent **记忆管理工具箱**（非完整框架），提供�
 1. **ReMeLight**（文件型记忆）— 上下文压缩 + 文件持久化（主推）
 2. **ReMe**（向量型记忆）— 结构化语义检索
 
-基于阿里 **AgentScope** 框架构建，使用其 `Msg`、`ReActAgent`、`Toolkit`、`FormatterBase`、`ChatModelBase` 抽象。ReMe 不替代 AgentScope，而是为其扩展记忆管理能力。
+基于阿里 **AgentScope** 框架构建，使用其 `Msg`、`ReActAgent`、`FormatterBase`、`ChatModelBase` 抽象。ReMe 不替代 AgentScope，而是为其扩展记忆管理能力。ReMe 的工具系统使用自定义 `FileIO` 类而非 AgentScope 的 `Toolkit` 抽象。
 
 ### 类继承链
 
@@ -21,6 +23,8 @@ Application (base)           — reme/core/application.py
   ├── ReMeLight(Application) — reme/reme_light.py    (文件型)
   └── ReMe(Application)      — reme/reme.py          (向量型)
 ```
+
+> **注意**：上述继承链为简化表示。实际源码中还有 `BaseMemory` 等中间抽象层，ReMeLight 和 ReMe 并非简单的 Application 子类关系。
 
 版本：`__version__ = "0.3.1.9"` (`reme/__init__.py:9`)
 
@@ -381,10 +385,10 @@ The above is a summary of previous conversation, use it as context to maintain c
 | `LocalVectorStore` | 本地向量 |
 | `QdrantVectorStore` | Qdrant |
 | `ESVectorStore` | Elasticsearch |
-| `PGVectorStore` | PostgreSQL + pgvector |
-| `ZvecVectorStore` | Zvec |
-| `ObvecVectorStore` | Obvec |
-| `HologresStore` | Hologres |
+
+> **注意**：以下后端在审计报告初版中列出，但在开源仓库 (agentscope-ai/ReMe) 中未找到对应实现，可能为内部版本或计划中的扩展：
+> - PostgreSQL + pgvector
+> - ZvecVectorStore / ObvecVectorStore / HologresStore
 
 #### 文件存储 (`reme/core/file_store/`)
 

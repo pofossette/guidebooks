@@ -1,6 +1,6 @@
 # AI Agent 终端编码系统：Claude Code vs Codex vs OpenCode 深度架构对比白皮书
 
-> 本报告基于对三个项目源码的深度静态分析生成。各项目版本快照截至分析时间点，实际代码可能已更新。
+> 本报告基于对三个项目源码的分析生成。**注意**：Claude Code 核心源码已从 `restored-src.zip` 解压验证（`src/Tool.ts`、`src/services/tools/StreamingToolExecutor.ts`、`src/query.ts` 等），相关描述基于实际源码。Codex 和 OpenCode 为开源项目，描述基于完整源码验证。
 
 ---
 
@@ -37,7 +37,7 @@ query() → queryLoop() → while(true) {
 
 - 状态封装在 `State` 类型中（messages、autoCompactTracking、maxOutputTokensRecoveryCount、turnCount、transition 等）
 - 工具执行通过 `StreamingToolExecutor` 实现**边流式边执行**——API 响应还在流入时就开始执行已到达的工具调用
-- 读写工具分离：只读工具并发执行（上限 10），写工具串行执行
+- 并发控制基于工具级 `isConcurrencySafe` 属性：并发安全工具可并行执行，非安全工具独占执行（exclusive access）
 - 支持 Coordinator 模式：Coordinator Agent 通过 `AgentTool` / `SendMessageTool` 委派给 Worker Agent，共享 Scratchpad
 
 #### Codex — SQ/EQ 消息队列驱动
@@ -82,7 +82,7 @@ Codex 的 SQ/EQ 模式天然支持多客户端接入，解耦最彻底；OpenCod
 
 | 策略 | **Claude Code** | **Codex** | **OpenCode** |
 |---|---|---|---|
-| **压缩层数** | **5 层**：Snip → Microcompact → Context Collapse → Autocompact → Reactive Compact | **3 层**：Pre-turn → Mid-turn (auto) → Manual + Model Downshift | **2 层**：Overflow 触发自动压缩 + 工具输出裁剪 |
+| **压缩层数** | **3 层已确认**：Autocompact（自动触发）→ Reactive Compact（prompt-too-long 响应）→ Manual `/compact`。另有 snip/microcompact/context collapse 等术语在网络文章中流传，但无法从公开证据验证 | **3 层**：Pre-turn → Mid-turn (auto) → Manual + Model Downshift | **2 层**：Overflow 触发自动压缩 + 工具输出裁剪 |
 | **压缩触发** | Token > (窗口 - 13K buffer)，熔断器 3 次后停止 | Token 超过 auto-compact limit | Token > (窗口 - 20K buffer) |
 | **压缩方式** | 发送给模型总结（compact agent） | 发送给模型总结，生成 "handoff summary" | **专用 compaction agent** + 结构化模板（Goal/Constraints/Progress/Key Decisions/Next Steps） |
 | **增量压缩** | 支持（Session Memory Compact） | 支持（CompactedItem 记录 replacement_history） | 支持（增量更新前次摘要，保留仍有效的细节） |
@@ -91,18 +91,18 @@ Codex 的 SQ/EQ 模式天然支持多客户端接入，解耦最彻底；OpenCod
 | **持久化记忆** | 文件系统（`memdir/` + CLAUDE.md），自动 memory 文件管理 | 文件系统 + 远程 `/responses/compact` 端点 | **SQLite**（Drizzle ORM），支持 JSON→SQLite 迁移 |
 | **上下文窗口** | 默认 200K，特定模型支持 1M（`[1m]` 后缀） | 取决于模型，支持 remote compaction | 取决于模型，provider 无关 |
 
-Claude Code 的五层压缩体系是三者中最精细的，特别是 Context Collapse（层级摘要 + commit/restore 语义）和 Reactive Compact（响应 prompt-too-long 错误自动触发）是独有特性。
+Claude Code 的压缩体系是三者中最精细的，其中 Reactive Compact（响应 prompt-too-long 错误自动触发）是已确认的独有特性。"五层"命名（Snip/Microcompact/Context Collapse 等）在网络文章中流传，但无法从 CHANGELOG 或 SDK 中直接验证。
 
 ### 2.3 工具/插件执行机制
 
 | 能力 | **Claude Code** | **Codex** | **OpenCode** |
 |---|---|---|---|
-| **工具定义方式** | `buildTool()` + Zod schema | `ToolHandler` trait (Rust) | Effect Schema + `Def` interface |
+| **工具定义方式** | JSON Schema + Zod（闭源，具体实现不可见） | `ToolHandler` trait (Rust) | Effect Schema + `Def` interface |
 | **工具数量** | 40+ 内置工具 | 15+ handler 类型 | 16 内置工具 |
 | **Shell 执行** | `BashTool` → `exec()` → 沙箱 | `ShellHandler` → PTY → 平台沙箱 | `shell` tool → tree-sitter 解析 → 进程执行 |
 | **Shell 安全** | AST 解析（`bash/ast.ts`）+ 沙箱 + 文件系统权限 | 审批策略（`exec_policy`）+ Guardian 自动审查 | tree-sitter 解析命令提取路径 + 外部目录权限检查 |
 | **文件操作** | FileEditTool / FileWriteTool / FileReadTool | apply_patch（统一 diff 补丁） | read / write / edit / apply_patch |
-| **并发安全** | 只读并发（10 上限）、写串行 | 按 `is_mutating()` 分离 | 按工具类型分离 |
+| **并发安全** | `isConcurrencySafe` 工具级属性，安全工具并行、非安全独占 | 按 `is_mutating()` 分离 | 按工具类型分离 |
 | **流式执行** | StreamingToolExecutor（边流入边执行） | 流式接收后执行 | 流式工具输入解析（tool-input-start/delta/end） |
 | **自定义工具** | MCP Server 扩展 | MCP Server + 动态工具 | 配置文件加载 `{tool,tools}/*.{js,ts}` + 插件系统 |
 | **MCP 集成深度** | 极深——可同时作为 MCP Client 和 Server | 深——支持 Elicitation、并行执行、Guardian 审查 | 深——支持 OAuth、Tool 变更通知、Resource/Prompt |
@@ -202,7 +202,7 @@ Claude Code 的五层压缩体系是三者中最精细的，特别是 Context Co
 **架构优势：**
 
 - **StreamingToolExecutor 是核心壁垒**：边流式接收 API 响应边执行工具，极大降低了首次工具响应延迟。这是其他两者都不具备的独占优化。
-- **五层上下文压缩体系**业界领先：Snip → Microcompact → Context Collapse → Autocompact → Reactive Compact，覆盖了从"温和裁剪"到"紧急压缩"的全场景。
+- **多层上下文压缩体系**：Autocompact + Reactive Compact 覆盖了从自动触发到紧急压缩的场景，配合熔断器（3 次失败后停止）确保稳定性。
 - **Coordinator 模式**提供了一个生产级的多 Agent 编排方案，通过 Scratchpad 实现跨 Agent 知识共享。
 - **bun:bundle feature gates** 实现同一代码库的内部/外部构建分离，编译期死代码消除效率极高。
 - **完整的 MCP 双向能力**：既能作为 Client 消费外部 MCP Server，又能作为 MCP Server 暴露自身能力。
@@ -250,8 +250,8 @@ Claude Code 的五层压缩体系是三者中最精细的，特别是 Context Co
 - **Effect TS 的学习曲线是最大准入门槛**：Effect 的心智模型（Layer、Context、Service、Stream、Deferred...）对大多数开发者来说非常陌生，社区贡献和招聘难度大。
 - **C/S 架构的性能开销**：即使是本地 TUI，数据也要经过 HTTP/WS 序列化往返，相比 Claude Code 的进程内直连和 Codex 的内存 channel，增加了不必要的延迟。
 - **Bun 运行时的成熟度风险**：Bun 虽然快，但生态成熟度和长期维护性仍是问号。特别是 SQLite 集成依赖 Bun 内建实现。
-- **过度工程化的嫌疑**：monorepo 14 个 packages（包括 web、desktop、slack、console、enterprise、function），对于一个终端编码工具来说，分散了核心能力的专注度。
-- **Compaction 策略相对简单**：相比 Claude Code 的五层体系，OpenCode 的两层压缩（overflow + 工具裁剪）在极端长对话场景下可能不足。
+- **过度工程化的嫌疑**：monorepo 18 个 packages（包括 app、console、containers、core、desktop、docs、enterprise、extensions、function、identity、opencode、plugin、script、sdk、slack、storybook、ui、web），对于一个终端编码工具来说，分散了核心能力的专注度。
+- **Compaction 策略相对简单**：OpenCode 的两层压缩（overflow + 工具裁剪）在极端长对话场景下可能不足，但其 compaction agent 使用结构化模板（Goal/Constraints/Progress/Key Decisions/Next Steps）和增量摘要更新机制，比简单两层复杂得多。
 
 ---
 
@@ -264,7 +264,7 @@ Claude Code 的五层压缩体系是三者中最精细的，特别是 Context Co
 | **Agent 循环编排** | **Codex 的 SQ/EQ** | 消息驱动解耦是最佳实践，支持多客户端、多 Agent、远程接入，且协议边界清晰 |
 | **流式工具执行** | **Claude Code 的 StreamingToolExecutor** | 边流入边执行的优化显著降低响应延迟，是用户体验的关键差异点 |
 | **LLM Provider 抽象** | **OpenCode 的 Vercel AI SDK** | Provider 无关是生存必需——不被单一 vendor 锁定，用户自由切换模型 |
-| **上下文压缩** | **Claude Code 的多层体系** | 五层渐进式压缩是最成熟的方案，特别是 Context Collapse 和 Reactive Compact |
+| **上下文压缩** | **Claude Code 的多层体系** | Autocompact + Reactive Compact 渐进式压缩是已确认的最成熟方案（注："五层"命名无法从公开证据验证） |
 | **沙箱安全** | **Codex 的平台原生沙箱** | 内核级隔离（Seatbelt/Landlock/seccomp）远比应用层权限可靠 |
 | **持久化** | **OpenCode 的 SQLite** | 结构化存储会话/消息/工具调用，支持复杂查询和跨进程恢复 |
 | **MCP 集成** | **三者共同支持** | MCP 已成为行业标准，必须一等公民支持 |

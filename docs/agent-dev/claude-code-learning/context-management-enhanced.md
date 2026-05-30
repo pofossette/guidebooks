@@ -1,295 +1,251 @@
-可以，直接用流程图来解释这套“五层记忆系统”。
+# Claude Code 记忆系统与上下文压缩管道（源码校对版）
 
-## 总体流程图
+> 基于 Claude Code 源码（`src/memdir/`、`src/services/compact/`）、CHANGELOG、Agent SDK 类型定义交叉验证。原文描述的"五层记忆系统"（写入层、索引层、检索层、融合层、淘汰层）在源码中不存在，本文基于实际实现重写。
+
+## 实际架构
+
+Claude Code 的记忆和上下文管理由三个独立但协作的子系统构成：
 
 ```mermaid
 flowchart TD
-    A[用户输入 / 当前任务] --> B[写入层候选抽取]
-    B --> C{值不值得记?}
+    A[用户对话] --> B[System Prompt 构建]
+    B --> B1[加载 CLAUDE.md<br/>User / Project / Local / Managed]
+    B --> B2[加载 Auto-Memory<br/>~/.claude/projects/.../memory/]
+    B --> B3[注入环境信息<br/>git / 工作目录 / 日期 / 权限模式]
+    B --> B4[注入可用工具和技能列表]
 
-    C -- 否 --> Z1[丢弃\n寒暄/重复/一次性中间信息]
-    C -- 仅当前有用 --> D[写入 Session Memory]
-    C -- 跨会话可复用 --> E[写入 Durable Memory]
+    B1 --> C[发送 API 请求]
+    B2 --> C
+    B3 --> C
+    B4 --> C
 
-    D --> F[索引层]
-    E --> F
+    C --> D[模型推理 + 工具调用循环]
+    D --> E{接近上下文窗口?}
+    E -- 否 --> D
+    E -- 是 --> F[Compaction 触发]
+    F --> G[LLM 生成结构化摘要]
+    G --> H[压缩后继续对话]
 
-    F --> F1[按用户索引]
-    F --> F2[按会话索引]
-    F --> F3[按任务索引]
-    F --> F4[按实体索引]
-    F --> F5[按时间切片索引]
-    F --> F6[语义向量索引]
-
-    A --> G[检索请求构造]
-    G --> H[结构化过滤\nuser/session/task/entity/time]
-    H --> I[语义召回\nembedding / similarity]
-    I --> J[重排与去重]
-
-    J --> K[融合层]
-    K --> K1[归一化]
-    K --> K2[按槽位分组\n偏好/任务状态/实体事实/历史决策]
-    K --> K3[压缩与预算控制]
-    K --> K4[生成 Prompt Context Pack]
-
-    K4 --> L[注入当前 Prompt]
-    L --> M[模型生成回答 / 执行动作]
-
-    E --> N[淘汰层]
-    D --> N
-    N --> N1[过期处理\nTTL / stale]
-    N --> N2[冲突消解\n新旧版本/同槽位覆盖]
-    N --> N3[污染治理\n幻觉/脏工具输出/低置信内容]
-    N --> F
+    D --> I[Auto-Memory 写入<br/>用户确认后保存为 .md 文件]
+    I --> J[Auto-Dream 后台整理<br/>清理过期/重复记忆]
 ```
 
 ---
 
-## 这张图怎么理解
+## 一、CLAUDE.md 分层加载
 
-### 1. 写入层
+CLAUDE.md 是 Claude Code 的核心配置和指令系统，分为四个层级：
 
-不是把所有对话都存起来，而是先做一次判断：
+| 层级 | 路径 | 用途 | 优先级 |
+|------|------|------|--------|
+| User | `~/.claude/CLAUDE.md` | 用户个人全局指令 | 最低 |
+| Project | `.claude/CLAUDE.md` | 项目级指令（提交到 git） | 中 |
+| Local | `CLAUDE.local.md` | 本地指令（不提交 git） | 高 |
+| Managed | 组织管理下发 | 组织策略指令 | 最高 |
 
-* 这句话是不是长期有用
-* 只是当前任务临时有用
-* 还是纯噪声
+通过 `InstructionsLoadedHookInput` 类型确认，`memory_type` 字段只有 `'User' | 'Project' | 'Local' | 'Managed'` 四种。
 
-所以写入层本质上是一个“记忆闸门”。
+这些内容在每次 API 调用时通过 system prompt 注入，不是存储在数据库或向量索引中。
 
 ---
 
-## 写入层内部流程图
+## 二、Auto-Memory 系统
+
+### 存储方式
+
+记忆存储为**纯 markdown 文件**，路径为 `~/.claude/projects/<sanitized-cwd>/memory/`。
+
+每个记忆文件使用 frontmatter 格式：
+
+```markdown
+---
+name: short-kebab-case-slug
+description: one-line summary
+metadata:
+  type: user | feedback | project | reference
+---
+
+记忆内容...
+```
+
+通过 `MEMORY.md` 索引文件组织，每条记录一行，不超过 150 字符。
+
+### 四种记忆类型
+
+| 类型 | 用途 | 何时保存 |
+|------|------|----------|
+| `user` | 用户角色、偏好、知识水平 | 了解到用户信息时 |
+| `feedback` | 用户对工作方式的纠正或确认 | 用户纠正或确认方法时 |
+| `project` | 项目进展、目标、决策 | 了解到项目动态时 |
+| `reference` | 外部系统资源指针 | 发现外部资源时 |
+
+### 记忆召回（Memory Recall）
+
+在对话中召回相关记忆时，支持两种模式：
+
+- **select**：选择完整文件内容加载
+- **synthesize**：使用 Sonnet 模型从多个小记忆中合成一段摘要
+
+### 记忆年龄警告
+
+超过 1 天的记忆会附加警告：
+
+> "This memory is X days old. Memories are point-in-time observations, not live state — claims about code behavior or file:line citations may be outdated."
+
+> **源码中不存在**向量索引、embedding 搜索、多维索引（按用户/会话/任务/实体/时间）等机制。记忆就是纯 markdown 文件，通过目录结构和文件名组织。
+
+---
+
+## 三、Compaction（上下文压缩）管道
+
+这是 Claude Code 最核心的上下文管理机制。
+
+### 3.1 触发机制
 
 ```mermaid
 flowchart TD
-    A[一轮对话 / 工具结果 / 任务阶段结束] --> B[抽取候选事实]
-    B --> C[事实分类\n偏好/约束/任务状态/实体事实/经验]
-    C --> D{价值判断}
+    A[每轮对话后] --> B{token 使用量<br/>接近上下文窗口?}
+    B -- 否 --> C[继续正常对话]
+    B -- 是 --> D[自动触发 Compaction]
+    D --> E[PreCompact Hook]
+    E --> F{Hook 是否阻止?}
+    F -- 是 --> G[跳过本次压缩]
+    F -- 否 --> H[LLM 生成结构化摘要]
+    H --> I[替换旧消息为摘要]
+    I --> J[注入继续提示]
+    J --> K[PostCompact Hook]
+    K --> L[继续对话]
 
-    D -- 无复用价值 --> X[Discard]
-    D -- 仅当前任务有效 --> E[Session Memory]
-    D -- 跨会话可复用 --> F[Durable Memory]
-
-    E --> G[附带元数据\nuser/session/task/entity/time/confidence]
-    F --> G
-    G --> H[写入存储]
+    M[用户手动 /compact] --> E
 ```
 
-### 核心点
+### 3.2 压缩提示词结构
 
-写入层只保存“事实”，不保存整段聊天原文。
-比如：
+压缩时发送给 LLM 的提示要求保留以下结构化章节：
 
-* “用户喜欢先看结论，再看细节” → 值得记
-* “谢谢你，明白了” → 不值得记
-* “这次报错根因是连接池耗尽” → 值得记
-* “我先试试看” → 不值得记
+```
+1. Initial task — 原始任务描述
+2. Key Technical Concepts — 关键技术概念
+3. Files and Code Sections — 相关文件和代码（含代码片段）
+4. Problem Solving — 问题解决过程
+5. User Interactions — 用户交互（安全指令必须逐字保留）
+6. Issues/Problems Encountered — 遇到的问题
+7. Work Completed — 已完成工作
+8. Current Work — 当前进行中工作
+9. Context for Continuing Work — 继续工作所需上下文
+```
+
+### 3.3 部分压缩
+
+支持两种保留模式：
+
+- **Suffix-preserving**：保留最近的 N 条消息不压缩（热缓存）
+- **Prefix-preserving**：保留最早的对话上下文
+
+压缩后注入继续提示："Continue the conversation from where it left off without asking the user any further questions. Resume directly..."
+
+### 3.4 容错与重试
+
+| 机制 | 说明 |
+|------|------|
+| 重试 | 压缩失败（API 错误等）时自动重试 |
+| 熔断器 | 连续 3 次失败后停止重试 |
+| Reactive compaction | 首次尝试从溢出大小开始，避免浪费 |
+| 多模态处理 | 遇到媒体大小错误时重试剥离图片 |
+
+### 3.5 已知问题与修复
+
+CHANGELOG 记录了大量压缩相关的 bug 修复：
+
+- 压缩后 deferred tools 的 input schema 丢失 → 已修复
+- 子代理转录文件在重试时重复写入 → 已修复
+- 背景 agent 完成通知在压缩后丢失 → 已修复
+- 压缩后 skills 被重新执行 → 已修复
+- Token 估算过高导致过早压缩 → 已修复
+- 压缩后 rate-limit 升级选项消失 → 已修复
+- 压缩后 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 被忽略 → 已修复
 
 ---
 
-## 2. 索引层
+## 四、Auto-Dream（后台记忆整理）
 
-索引层不是一个单独向量库，而是多维索引系统。
+Auto-Dream 是一个后台机制，定期清理和整理记忆文件：
+
+- **扫描**记忆文件的最后修改时间
+- **合并**重复或高度相似的记忆
+- **删除**与当前代码状态矛盾的记忆
+- **生成年龄警告**：超过 1 天的记忆附加时效性提醒
+
+> Auto-Dream 的逻辑很简单——定期扫描、清理过期/重复记忆。**不存在**原文描述的"冲突消解"（版本比较、tombstone）、"污染治理"（幻觉隔离、审计删除）等复杂机制。
+
+---
+
+## 五、Agent SDK 上下文隔离
+
+### 子代理上下文模型
 
 ```mermaid
 flowchart LR
-    A[Memory Record] --> B[结构化索引]
-    A --> C[关系索引]
-    A --> D[语义向量索引]
-
-    B --> B1[user_id]
-    B --> B2[session_id]
-    B --> B3[task_id]
-    B --> B4[entity_id]
-    B --> B5[time range]
-    B --> B6[fact_type]
-
-    C --> C1[用户-会话]
-    C --> C2[会话-任务]
-    C --> C3[任务-实体]
-    C --> C4[实体-实体]
-
-    D --> D1[summary embedding]
-    D --> D2[content embedding]
-    D --> D3[use-case embedding]
+    P[Parent Agent<br/>完整上下文] -->|Agent Tool| S1[Subagent 1<br/>独立上下文窗口]
+    P -->|Agent Tool| S2[Subagent 2<br/>独立上下文窗口]
+    S1 -->|工具返回值| P
+    S2 -->|工具返回值| P
 ```
 
-### 核心点
+关键特征：
+- 子 Agent 有**独立的上下文窗口**，不共享父 Agent 的对话历史
+- 结果通过**工具调用的返回值**传递，不是异步事件总线
+- 子 Agent 可以配置 `memory` 字段加载特定范围的记忆文件（`'user' | 'project' | 'local'`）
+- 子 Agent 可以配置独立的 `permissionMode`、`effort`、`model`
+- **不存在** "MemoryShareEvent" 或共享压缩记忆的机制
 
-索引层要支持两种能力同时存在：
+### AgentDefinition 完整参数
 
-* **切片能力**：先按用户、会话、任务、实体、时间缩小范围
-* **模糊能力**：再用语义相似度把相关事实召回出来
-
----
-
-## 3. 检索层
-
-检索层不是“直接 top-k 相似搜索”，而是组合式检索。
-
-```mermaid
-flowchart TD
-    A[当前请求] --> B[解析检索意图]
-    B --> C[构造查询对象\nuser/session/task/entity/time/query]
-
-    C --> D[结构化过滤]
-    D --> E[得到候选集]
-
-    C --> F[语义召回]
-    F --> G[得到语义候选]
-
-    E --> H[合并候选]
-    G --> H
-
-    H --> I[重排\n相关性/时间/置信度/来源可靠性]
-    I --> J[去重与多样化]
-    J --> K[输出可用记忆集合]
-```
-
-### 这里为什么一定要两段式
-
-因为只做结构化过滤会漏掉“措辞不一样但意思相关”的内容。
-只做语义召回又会把别的任务、别的实体、很久以前的旧事实也带进来。
-
-所以合理的顺序通常是：
-
-**先过滤，再召回，再重排。**
-
----
-
-## 4. 融合层
-
-融合层是整个系统最容易被忽视的一层。
-
-它的职责不是“把检索结果拼起来”，而是把它们转换成模型真正能吃的 prompt 上下文。
-
-```mermaid
-flowchart TD
-    A[召回到的记忆结果] --> B[归一化]
-    B --> C[冲突标记]
-    C --> D[按用途分槽位]
-
-    D --> D1[用户偏好]
-    D --> D2[任务续接]
-    D --> D3[实体事实]
-    D --> D4[历史决策]
-    D --> D5[安全/约束]
-
-    D1 --> E[压缩与合并]
-    D2 --> E
-    D3 --> E
-    D4 --> E
-    D5 --> E
-
-    E --> F[预算控制\n只保留最关键内容]
-    F --> G[生成 Context Pack]
-    G --> H[注入 Prompt]
-```
-
-### 为什么要融合层
-
-因为模型并不擅长直接消费一堆原始数据库记录。
-模型更擅长消费这种格式：
-
-* 用户偏好
-* 当前任务延续信息
-* 当前实体的关键事实
-* 相关历史决策
-* 冲突与不确定点
-
-也就是说，融合层做的是 **“机器可检索” → “模型可理解”** 的转换。
-
----
-
-## 5. 淘汰层
-
-淘汰层不是垃圾桶，而是质量控制系统。
-
-```mermaid
-flowchart TD
-    A[现有记忆库] --> B[定期扫描 / 写入时检查]
-
-    B --> C{是否过期?}
-    C -- 是 --> C1[标记 stale / 降权 / 归档]
-    C -- 否 --> D{是否冲突?}
-
-    D -- 是 --> D1[版本比较]
-    D1 --> D2[保留较新/较可信版本]
-    D2 --> D3[旧版本降权或 tombstone]
-
-    D -- 否 --> E{是否污染?}
-    E -- 是 --> E1[低置信清理]
-    E1 --> E2[幻觉/脏工具输出隔离]
-    E2 --> E3[审计或删除]
-
-    E -- 否 --> F[保持 active]
-```
-
-### 淘汰层主要解决三件事
-
-**过期**
-
-* 旧任务状态不能一直当真
-* 环境事实可能变更
-
-**冲突**
-
-* 新旧事实不一致
-* 同一实体同一槽位只能有一个主版本
-
-**污染**
-
-* 模型猜的内容被误写进去
-* 工具长输出里的噪声被当作事实
-* 一次性中间推理混进长期记忆
-
----
-
-## 把五层串成一条完整执行链
-
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant R as 运行时
-    participant W as 写入层
-    participant X as 索引层
-    participant Q as 检索层
-    participant F as 融合层
-    participant P as Prompt Assembler
-    participant M as 模型
-    participant E as 淘汰层
-
-    U->>R: 发起新问题 / 新任务
-    R->>Q: 生成检索请求
-    Q->>X: 结构化过滤 + 语义召回
-    X-->>Q: 返回候选记忆
-    Q-->>F: 重排后结果
-    F-->>P: 生成 Context Pack
-    P-->>M: 注入 prompt
-    M-->>U: 输出回答 / 动作
-
-    M->>W: 当前轮对话与工具结果
-    W->>W: 判断值不值得记
-    W->>X: 写入并更新索引
-    X-->>E: 提供存量记忆
-    E->>E: 过期/冲突/污染处理
+```typescript
+type AgentDefinition = {
+  description: string;        // 何时使用此 agent
+  tools?: string[];           // 允许的工具列表
+  disallowedTools?: string[]; // 禁用的工具列表
+  prompt: string;             // 系统提示
+  model?: string;             // 模型选择
+  mcpServers?: AgentMcpServerSpec[];
+  skills?: string[];          // 预加载的技能
+  initialPrompt?: string;     // 自动提交的首轮提示
+  maxTurns?: number;          // 最大轮次
+  background?: boolean;       // 后台运行
+  memory?: 'user' | 'project' | 'local';  // 记忆范围
+  effort?: ('low' | 'medium' | 'high' | 'xhigh' | 'max') | number;
+  permissionMode?: PermissionMode;
+};
 ```
 
 ---
 
-## 一句话总结这套流程图
+## 六、与虚构"五层记忆系统"的对比
 
-这套系统不是：
+| 原文描述 | 源码实际情况 |
+|----------|-------------|
+| 写入层：记忆闸门、事实抽取、价值判断 | Auto-Memory 由用户确认后保存，无自动抽取 |
+| 索引层：按用户/会话/任务/实体/时间/语义向量索引 | 纯文件目录结构，无任何索引 |
+| 检索层：结构化过滤 + 语义召回 + 重排 | 记忆文件直接加载到 system prompt |
+| 融合层：槽位分组、冲突标记、预算控制 | 无融合层，文件内容直接使用 |
+| 淘汰层：TTL、冲突消解、污染治理 | Auto-Dream 简单清理过期/重复文件 |
+| 向量索引 embedding | 不存在 |
+| 多维关系索引 | 不存在 |
+| 语义相似度搜索 | 不存在 |
 
-**“用户说了什么，我都存起来。”**
+---
 
-而是：
+## 总结
 
-**“用户和系统产生了很多信息，我先筛选出值得保留的事实；再把这些事实做多维索引；在需要时用过滤+语义联合召回；再压缩成模型可消费的上下文；最后持续清理过期、冲突和污染。”**
+Claude Code 的记忆和上下文管理是一个**务实的文件系统方案**：
 
-所以它的目标不是“记得多”，而是：
+1. **CLAUDE.md**：分层指令文件，通过 system prompt 注入
+2. **Auto-Memory**：纯 markdown 记忆文件，按目录组织
+3. **Auto-Dream**：简单的后台清理机制
+4. **Compaction**：LLM 驱动的结构化摘要压缩
+5. **Prompt Cache**：通过动态边界分离实现跨用户缓存复用
 
-**在正确时刻，拿回正确事实。**
+整个系统的设计哲学是**简单可靠**——用文件系统替代数据库，用 LLM 摘要替代复杂的索引和检索，用目录结构替代多维索引。
 
-如果你要，我下一条可以继续给你一版 **更适合放进文档/汇报里的架构图**，比如“模块框图版”或者“带数据库与服务边界的部署图版”。
+> 参考来源：Claude Code CHANGELOG、Agent SDK 类型定义（sdk.d.ts）、Claude Code 二进制字符串分析

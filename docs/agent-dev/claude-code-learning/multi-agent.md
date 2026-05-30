@@ -1,145 +1,216 @@
-我先按文章里的实现，给你整理成两个流程图：一个看**多 Agent 编排**，一个看**任务状态机**。由于原始微信链接无法直接打开，我参考了两篇内容高度一致的公开镜像/转载来还原结构。([cnblogs.com][1])
+# AI 编码 Agent 多 Agent 机制对比（源码校对版）
 
-## 1）整体多 Agent 编排流程图
+> 基于 Claude Code 源码（`src/constants/tools.ts`、`src/coordinator/`）、Agent SDK、Codex（Rust）源码、OpenCode（TypeScript）源码验证。原文描述的是一个微信公众号内容 Pipeline 应用（Strategist/Architect/Scribe），并非 Claude Code 的多 Agent 架构。本文基于三个项目的实际实现重写。
+
+## 三种多 Agent 模型
+
+三个项目的多 Agent 机制设计哲学截然不同：
+
+| 维度 | Claude Code | Codex (Rust) | OpenCode (TypeScript) |
+|------|------------|--------------|----------------------|
+| Agent 定义 | `AgentDefinition` 配置式 | `spawn_agent` 工具 + 线程模型 | `TaskTool` + Agent 角色系统 |
+| 隔离模型 | 独立上下文窗口 | 独立线程 + 子上下文 | 独立 Effect 执行上下文 |
+| 通信方式 | 工具返回值 | `SubagentNotification` XML 标签 | `TaskTool` 直接返回 |
+| 并发控制 | maxTurns + background 标志 | thread spawn depth limit | Doom Loop 检测（阈值 3） |
+
+---
+
+## 1. Claude Code：Agent 工具 + 配置式定义
+
+### AgentDefinition
+
+Claude Code 通过 `AgentDefinition` 类型定义可复用的 Agent 模板（来自 Agent SDK 类型定义）：
+
+```typescript
+type AgentDefinition = {
+  description: string;        // 何时使用此 agent
+  prompt: string;             // 系统提示
+  tools?: string[];           // 允许的工具（缺省继承父级全部工具）
+  disallowedTools?: string[]; // 显式禁用的工具
+  model?: string;             // 模型选择（'sonnet'|'opus'|'haiku' 或继承）
+  skills?: string[];          // 预加载的技能
+  initialPrompt?: string;     // 自动提交的首轮提示
+  maxTurns?: number;          // 最大 API 轮次
+  background?: boolean;       // 后台运行（非阻塞）
+  memory?: 'user' | 'project' | 'local'; // 记忆范围
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | number;
+  permissionMode?: PermissionMode;
+  mcpServers?: AgentMcpServerSpec[];
+};
+```
+
+### 运行时行为
+
+- 子 Agent 有**独立的上下文窗口**，不共享父 Agent 的对话历史
+- 结果通过**工具调用的返回值**同步传递
+- `background: true` 时非阻塞运行，父 Agent 收到完成通知
+- 子 Agent 可以配置独立的 MCP 服务器
+- CHANGELOG 确认：修复了"背景子代理在 compaction 后变为不可见"的问题
+
+### 内置 Agent 类型
+
+从 `AgentInfo` 类型可知，Claude Code 支持注册命名 Agent：
+
+```typescript
+type AgentInfo = {
+  name: string;       // 如 "Explore", "general-purpose"
+  description: string;
+  model?: string;
+};
+```
+
+> **源码中不存在** `sessions_spawn()` 函数、"系统事件总线"或 `MemoryShareEvent`。子 Agent 不通过异步事件总线通信。
+
+---
+
+## 2. Codex：线程模型 + spawn_agent
+
+### 线程架构
+
+Codex 使用 ThreadManager 管理 Agent 线程（`codex-rs/core/src/agent/control.rs` + `registry.rs`）：
+
+- 每个 Agent 运行在独立线程中
+- `exceeds_thread_spawn_depth_limit` 控制嵌套深度
+- `SubagentNotification` 结构体（`codex-rs/core/src/context/subagent_notification.rs`）通过 `<subagent_notification>` XML 标签注入对话上下文
+
+### spawn_agent 工具
+
+在 `multi_agent_v1` 命名空间下（`codex-rs/core/tests/suite/spawn_agent_description.rs`）：
+
+```rust
+const SPAWN_AGENT_TOOL_NAME: &str = "spawn_agent";
+```
+
+- 子 Agent 通过 `spawn_agent` 工具创建
+- 结果通过 `SubagentNotification` XML 标签返回父 Agent
+- SQ/EQ 模式（Submission Queue / Event Queue）管理消息流
+
+### 与 Claude Code 的关键差异
+
+| 维度 | Claude Code | Codex |
+|------|------------|-------|
+| Agent 创建 | 配置式 `AgentDefinition` | 运行时 `spawn_agent` 工具 |
+| 结果传递 | 工具返回值 | XML `<subagent_notification>` 标签 |
+| 嵌套深度 | 无显式限制（通过 maxTurns 间接控制） | `thread_spawn_depth_limit` 显式限制 |
+| 并发模型 | 同步/后台两种模式 | 线程级并发 |
+
+---
+
+## 3. OpenCode：TaskTool + 7 种 Agent 角色
+
+### TaskTool
+
+OpenCode 的多 Agent 通过 `TaskTool` 实现（`packages/opencode/src/tool/task.ts`）：
+
+```typescript
+// TaskTool 参数
+{
+  description: string;
+  prompt: string;
+  subagent_type?: string;  // Agent 角色类型
+  task_id?: string;
+}
+```
+
+- 子 Agent 结果通过 `TaskTool` 直接返回为工具输出（第 155-166 行）
+- 使用 Effect 库管理异步执行
+
+### 7 种 Agent 角色
+
+OpenCode 定义了 7 种内置 Agent 角色（`packages/opencode/src/agent/agent.ts`）：
+
+| 角色 | 用途 |
+|------|------|
+| `build` | 构建/编译任务 |
+| `plan` | 规划和设计 |
+| `general` | 通用任务 |
+| `explore` | 代码探索 |
+| `compaction` | 上下文压缩 |
+| `title` | 标题生成 |
+| `summary` | 摘要生成 |
+
+### Doom Loop 检测
+
+OpenCode 内置了递归调用保护（`packages/opencode/src/processor.ts`）：
+
+```typescript
+const DOOM_LOOP_THRESHOLD = 3;
+```
+
+当子 Agent 递归调用超过 3 次时触发保护，防止无限循环。
+
+---
+
+## 4. 通信模式对比
 
 ```mermaid
 flowchart TD
-    A[定时触发 / 新事件进入] --> B[Skill 层<br/>读取 SKILL.md 规则]
-    B --> C[主控 Agent / Orchestrator<br/>判断当前事件类型]
-    C --> D[调用工具层 db.py<br/>读取今日热点 radar topics]
-    D --> E[Spawn Strategist 子 Agent<br/>做选题筛选]
+    subgraph ClaudeCode[Claude Code]
+        P1[Parent Agent] -->|Agent Tool 调用| S1[Subagent]
+        S1 -->|工具返回值| P1
+        P1 -.->|background=true| N1[完成通知]
+    end
 
-    E --> F[Strategist 输出<br/>3-5 个候选选题 + 评分 + 理由]
-    F --> G{人工确认选题}
-    G -- 否 / 退回 --> C
-    G -- 是 --> H[创建 article 记录<br/>状态=topic_selected]
+    subgraph Codex[Codex]
+        P2[Parent Agent] -->|spawn_agent 工具| S2[Subagent Thread]
+        S2 -->|SubagentNotification XML| P2
+    end
 
-    H --> I[Spawn Architect 子 Agent<br/>深度调研 + 生成大纲]
-    I --> J[Architect 输出<br/>带来源标注的大纲]
-    J --> K{人工确认大纲}
-    K -- 否 / 退回 --> C
-    K -- 是 --> L[保存 outline<br/>状态=outline_confirmed]
-
-    L --> M[Spawn Scribe 子 Agent<br/>撰写全文]
-    M --> N[Scribe 输出<br/>Markdown 正文]
-    N --> O{人工确认正文}
-    O -- 否 / 退回 --> C
-    O -- 是 --> P[自动发布 / 推送平台]
-    P --> Q[状态更新为 published]
+    subgraph OpenCode[OpenCode]
+        P3[Parent Agent] -->|TaskTool 调用| S3[Subagent]
+        S3 -->|TaskTool 返回值| P3
+    end
 ```
 
-这套系统的主线是“**事件驱动 + 三次人工卡点**”：定时触发后，主控 Agent 依据 `SKILL.md` 中的事件规则编排流程，依次调用 Strategist、Architect、Scribe 三个执行 Agent；每个关键产出都需要人工确认后才能进入下一步，最后自动发布。([cnblogs.com][1])
+关键差异：
+- **Claude Code**：支持后台运行（`background: true`），子 Agent 结果通过通知异步返回
+- **Codex**：使用 XML 标签注入上下文，保持对话流的完整性
+- **OpenCode**：最简单直接，工具返回值同步传递
 
 ---
 
-## 2）三层架构图
+## 5. Skill 系统
 
-```mermaid
-flowchart TB
-    S[Skill 层<br/>编排入口 / 事件规则<br/>SKILL.md 定义处理逻辑]
-    A[Agent 层<br/>Strategist / Architect / Scribe<br/>负责判断、调研、写作]
-    T[工具层<br/>db.py + config.py<br/>封装数据库与基础设施操作]
+### Claude Code Skills
 
-    S --> A
-    A --> T
-```
+Skills 是 markdown 格式的指令文件，提供领域特定知识：
 
-文章把系统拆成三层：
-**Skill 层**负责“流程规则与编排入口”，**Agent 层**负责“思考与执行”，**工具层**负责“数据库和基础设施抽象”。这样做的原因是安全、可测、可维护：Agent 不直接接触数据库凭证或 SQL，而是通过 `db.py` 子命令间接操作 Supabase。([cnblogs.com][1])
+- 通过 `AgentDefinition.skills` 字段预加载
+- Skills 不是"事件驱动编排器"，而是**指令/知识提供者**
+- 编排逻辑在主 Agent 的推理中，不在 Skill 文件中
+- 支持 `context: fork` 让子 Agent 继承 Skill 上下文
 
----
+### Codex Skills
 
-## 3）Sub-Agent 接力机制流程图
+Codex 也有 Skill 系统（`codex-rs/skills/src/lib.rs`），同样是指令/知识提供者。
 
-这是文章里最关键的一段。
-
-```mermaid
-sequenceDiagram
-    participant Main as 主 Session / 主控 Agent
-    participant Skill as Skill 规则
-    participant Sub as Sub-Agent
-    participant Sys as 系统事件总线
-
-    Main->>Skill: 读取当前事件处理规则
-    Skill-->>Main: 应该 spawn 哪个子 Agent
-    Main->>Sub: sessions_spawn(task, label, mode=run)
-    Sub->>Sub: 执行具体任务（调研/大纲/写作）
-    Sub-->>Sys: 完成任务
-    Sys-->>Main: 推送完成事件
-    Main->>Main: 根据 label 识别来源
-    Main->>Skill: 匹配下一步处理规则
-    Skill-->>Main: 决定继续 / 保存结果 / 等待人工确认
-```
-
-文章中明确说，主 Agent 并不自己完成所有任务，而是通过 `sessions_spawn(...)` 拉起子 Agent；子 Agent 完成后，系统会自动把“完成事件”推回主 Session，主 Agent 再根据 `label` 识别是哪个任务完成，并按照 Skill 规则决定下一步。这就是整条 Pipeline 能持续“接力”跑下去的关键。([cnblogs.com][1])
+> **原文错误**：Skills 不是"事件驱动编排规则"。`sessions_spawn()` 函数不存在。子 Agent 结果不通过"系统事件总线"传递。
 
 ---
 
-## 4）三个执行 Agent 的职责分工图
+## 6. 设计哲学总结
 
-```mermaid
-flowchart LR
-    R[热点话题池<br/>radar_outbox] --> S1[Strategist<br/>选题筛选]
-    S1 --> T1[候选选题列表<br/>评分 + 理由]
+### Claude Code：配置驱动 + 灵活隔离
 
-    T1 --> H1{人工确认}
-    H1 -->|通过| S2[Architect<br/>深度调研 + 大纲]
-    S2 --> T2[详细大纲<br/>含信息源标注]
+- 通过 `AgentDefinition` 声明式定义 Agent
+- 独立上下文窗口 + 可配置的工具/模型/权限
+- 支持后台运行和完成通知
+- 记忆通过文件系统共享（`memory` 字段）
 
-    T2 --> H2{人工确认}
-    H2 -->|通过| S3[Scribe<br/>撰写全文]
-    S3 --> T3[Markdown 正文]
+### Codex：线程原生 + 类型安全
 
-    T3 --> H3{人工确认}
-    H3 -->|通过| P[发布]
-```
+- Rust 线程模型提供天然隔离
+- `spawn_agent` 工具 + XML 通知的通信模式
+- 显式的线程深度限制
+- SQ/EQ 模式管理消息流
 
-三个 Agent 分工非常清晰：
-Strategist 只做“选题判断”，输入是热点话题，输出是候选主题和评分；Architect 只做“调研 + 大纲”，且强调必须先调研再产出大纲；Scribe 则基于确认后的大纲与材料撰写完整文章。([cnblogs.com][1])
+### OpenCode：简洁直接 + 角色化
 
----
-
-## 5）任务状态机流程图
-
-```mermaid
-stateDiagram-v2
-    [*] --> topic_selected
-    topic_selected --> outline_draft
-    outline_draft --> outline_confirmed
-    outline_confirmed --> writing
-    writing --> review
-    review --> published
-    published --> [*]
-```
-
-文章的数据层使用 Supabase，并在 `articles` 表里通过 `status` 字段维护文章生命周期。文中给出的状态流转是：`topic_selected → outline_draft → outline_confirmed → writing → review → published`。这让系统在任何时刻都知道一篇文章处于哪一个阶段。([cnblogs.com][1])
+- `TaskTool` 一行调用子 Agent
+- 7 种内置角色覆盖常见场景
+- Doom Loop 检测防止递归失控
+- Effect 库管理异步执行
 
 ---
 
-## 6）你可以把这篇文章总结成一句话
-
-它不是“一个万能 Agent 写到底”，而是：
-
-**Skill 负责编排规则，主控 Agent 负责调度，Sub-Agent 负责单点执行，工具层负责安全落库，人类在关键节点做确认。** ([cnblogs.com][1])
-
-## 7）如果你想拿去做分享，可以直接用这版极简图
-
-```mermaid
-flowchart LR
-    A[事件触发] --> B[Skill 编排]
-    B --> C[主控 Agent]
-    C --> D1[Strategist]
-    D1 --> E1[人工确认]
-    E1 --> D2[Architect]
-    D2 --> E2[人工确认]
-    E2 --> D3[Scribe]
-    D3 --> E3[人工确认]
-    E3 --> F[自动发布]
-
-    C --> G[db.py / config.py]
-    G --> H[Supabase]
-```
-
-如果你要，我可以继续把它整理成一页更适合 PPT 的“架构图版”，或者改成 draw.io / PlantUML 风格。
-
-[1]: https://www.cnblogs.com/jarvis-ai-lab/p/19838203 "用 AI Agent 搭建微信公众号全自动内容 Pipeline：从选题到发布的事件驱动架构实战 - xiaochuran_ai - 博客园"
+> 参考来源：Claude Code Agent SDK 类型定义、Codex `codex-rs/` 完整源码、OpenCode `packages/` 完整源码

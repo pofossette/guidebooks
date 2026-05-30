@@ -1,92 +1,182 @@
-可以把这篇文章里的“上下文管理策略”理解成一条持续运行的 Agent 上下文流水线：**先保留最新环境、清理过时信息、在超限前压缩历史、把关键节点单独锚定、把重复结果进一步合并、在多 Agent 间共享压缩记忆、再按需动态扩展工具集合**。文章将其总结为七个策略：上下文压缩、保留、替换、锚定、合并、共享、工具动态扩展。([CSDN博客][1])
+# Claude Code 上下文管理机制（源码校对版）
+
+> 基于 Claude Code 源码（`src/constants/prompts.ts`、`src/services/compact/`、`src/memdir/`）、CHANGELOG、Agent SDK 类型定义交叉验证
+
+## 核心架构概览
+
+Claude Code 的上下文管理并非一个复杂的七层流水线，而是一个**实用且相对简单的系统**，由以下核心组件构成：
+
+1. **System Prompt 动态构建** — 每次 API 调用时注入最新环境状态
+2. **Compaction（上下文压缩）** — LLM 驱动的语义压缩，在接近上下文窗口限制时触发
+3. **Tool Result Truncation（工具结果截断）** — 防止单次工具输出撑爆上下文
+4. **Deferred Tool Loading（延迟工具加载）** — 通过 ToolSearch 按需加载工具 schema
+5. **CLAUDE.md + Auto-Memory** — 基于文件的持久化记忆系统
 
 ```mermaid
 flowchart TD
-    A[用户任务进入] --> B[写入 Task<br/>记录初始目标]
-    B --> C[生成最新 Dashboard<br/>时间/文件/终端/浏览器/操作指引]
-    C --> D[替换历史中过时 Dashboard<br/>只保留最新状态]
-    D --> E[Agent 推理与工具调用]
-    E --> F{是否产生关键节点?}
-
-    F -- 是 --> G[写入 ChatDashboard 锚点<br/>Task / Plan / Agent / Knowledge / TaskDone]
-    F -- 否 --> H[继续执行]
-
-    G --> H
-    H --> I{上下文是否接近上限?}
-
-    I -- 否 --> J{是否需要多 Agent 协作?}
-    I -- 是 --> K[保留热缓存<br/>最近对话和最近一次工具结果]
-    K --> L[对旧历史做 LLM 语义压缩]
-    L --> M{单次压缩后仍过长?}
-    M -- 是 --> N[递归分批压缩]
-    M -- 否 --> O[得到结构化压缩记忆]
-    N --> O
-
-    O --> P[合并重复结果<br/>同文件多次修改/重复命令/过多状态快照]
-    P --> J
-
-    J -- 是 --> Q[发布 MemoryShareEvent<br/>共享压缩记忆 + ChatDashboard]
-    J -- 否 --> R[继续当前 Agent]
-
-    Q --> S[其他 Agent 订阅并接手]
-    S --> T[基于共享记忆继续执行]
-    R --> U{是否需要更高级工具?}
-    T --> U
-
-    U -- 是 --> V[按 DAG 依赖动态启用新工具]
-    U -- 否 --> W[维持当前工具集]
-    V --> X[能力单调增加]
-    W --> Y[进入下一轮]
-    X --> Y
-    Y --> C
+    A[用户消息] --> B[构建 System Prompt<br/>CLAUDE.md + git 状态 + 工作目录 + 日期 + 记忆]
+    B --> C[组装工具集<br/>核心工具 + Deferred Tools]
+    C --> D[发送 API 请求]
+    D --> E[模型响应<br/>可能包含工具调用]
+    E --> F{工具调用?}
+    F -- 是 --> G[执行工具<br/>结果可能被截断]
+    G --> H[工具结果加入消息]
+    H --> I{接近上下文窗口?}
+    I -- 否 --> D
+    I -- 是 --> J[触发 Compaction<br/>LLM 生成结构化摘要]
+    J --> K[压缩后继续]
+    K --> D
+    F -- 否 --> L[返回用户]
 ```
-
-这张图对应的核心逻辑可以简化成 4 层：
-
-### 1. 先让 Agent 永远看到“最新现场”
-
-文章提出用 **Dashboard 固定区域** 来聚合当前时间、最近操作、IDE 状态、终端状态、浏览器状态和操作指引，减少 Agent 反复调用工具“回头查历史”的成本。实践中，这样做能减少无效状态查询，并提升执行效率。([CSDN博客][1])
-
-同时，系统会做 **上下文替换**：找到最新用户消息，把新的 `<dashboard>` 注入进去，并删除历史消息里已经过时的 dashboard，只让模型看到“此时此刻”的状态，而不是一堆陈旧快照。这样既节省 token，也避免 Agent 基于旧状态做决策。([CSDN博客][1])
-
-### 2. 一旦上下文变长，就压缩“旧历史”而不是压缩“最新状态”
-
-文章强调不是简单截断，而是做 **LLM 驱动的语义压缩**：保留任务概览、已完成步骤、当前状态、下一步计划等关键内容；并保留最近对话和最后一次工具调用作为 **热缓存**。如果一次压缩仍超长，就继续 **递归分批压缩**。对图片等多模态内容，还会先提取再还原。([CSDN博客][1])
-
-也就是说，系统的原则是：
-
-**最新状态直接保留，旧历史语义浓缩，极端情况下递归压缩。** ([CSDN博客][1])
-
-### 3. 把“重要节点”单独锚定，防止目标漂移
-
-仅靠压缩还不够，因为任务目标、计划更新、关键发现、检索到的知识等，可能散落在长对话里。所以文章引入 **ChatDashboard / 上下文锚定**，把这些关键信息按类型收集成结构化内容，例如 Task、Plan、Agent、Knowledge、TaskDone，并在压缩时作为 `<conversation_context>` 参考。这样压缩模型更容易判断哪些信息必须保留。([CSDN博客][1])
-
-这个策略的作用其实是：
-
-**压缩负责“瘦身”，锚定负责“定向”。**
-没有锚点，压缩可能越压越偏；有锚点，任务目标和关键脉络更不容易丢。这个也是文章强调“防止目标漂移”的原因。([CSDN博客][1])
-
-### 4. 再把重复内容折叠，并支持协作和扩容
-
-文章在压缩之后，又做了一层 **上下文合并**：
-同一个文件被修改很多次，不必都保留；重复试错的命令，不必全量记录；但“失败 → 解决 → 成功”的 troubleshooting 序列要完整保留。为此它把文件操作、命令执行等结构化成 XML，再按优先级合并。文章称这能在压缩后继续减少 30% 到 40% 的 token。([CSDN博客][1])
-
-在多 Agent 场景里，系统通过 **MemoryShareEvent** 共享“压缩后的记忆 + ChatDashboard”，这样新 Agent 不必重新探索项目和环境。共享的是压缩记忆，而不是整段历史，因此不会把上下文再次撑爆。([CSDN博客][1])
-
-最后，文章还把工具管理也纳入上下文管理：面对 100+ 工具，如果全塞进 prompt，会占掉大量 token。所以它用 **工具依赖 DAG**，只先启用基础工具；当 Agent 使用某些工具后，再逐步解锁依赖它们的高级工具，而且“只增不删”。这样把工具描述也做成了按需加载。([CSDN博客][1])
 
 ---
 
-## 一句话总结这篇文章的策略框架
+## 1. System Prompt 动态构建
 
-这篇文章的思路不是“单点优化上下文”，而是把上下文当成一个持续演化的系统来管理：
+Claude Code 每次 API 调用时，都会动态构建 system prompt，注入当前最新状态：
 
-**保留最新现场 → 清理过时快照 → 压缩旧历史 → 锚定关键节点 → 合并重复结果 → 在 Agent 间共享 → 按需扩展工具。** ([CSDN博客][1])
+- **工作目录和 git 状态** — 当前路径、分支、最近提交等
+- **CLAUDE.md 内容** — 分为 User（`~/.claude/CLAUDE.md`）、Project（`.claude/CLAUDE.md`）、Local（`CLAUDE.local.md`）、Managed（组织管理）四个层级
+- **当前日期**
+- **记忆文件** — 从 `~/.claude/projects/<sanitized-cwd>/memory/` 加载
+- **可用技能（Skills）列表**
+- **权限模式和工具列表**
 
-如果你愿意，我可以继续把它改成一版更适合汇报的版本，比如：
+系统使用 `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` 标记将动态内容与静态内容分离，以支持跨用户的 **prompt cache** 复用。这意味着只有动态部分（工作目录、git 状态等）在每次请求时变化，静态指令部分可以被缓存。
 
-1. “产品经理能看懂”的极简流程图
-2. “工程实现版”的分层架构图
-3. “PPT 一页图”样式的中文版图示
+> **注意：** 源码中不存在 "Dashboard 固定区域"、"ChatDashboard"、"上下文替换" 等概念。系统信息通过 system prompt 注入，而非替换历史消息。
 
-[1]: https://blog.csdn.net/2401_84204413/article/details/153682309 "〖万字长文〗AI Agent上下文管理七大策略：从压缩到动态扩展的完整指南！_ai agent中上下文压缩模型选哪个-CSDN博客"
+---
+
+## 2. Compaction（上下文压缩）
+
+这是 Claude Code 最核心的上下文管理机制。
+
+### 触发条件
+
+- **自动触发**：当 token 使用接近模型上下文窗口限制时（`autoCompactThreshold`）
+- **手动触发**：用户执行 `/compact` 命令，可附带自定义指令
+
+### 压缩方式
+
+调用 LLM 生成结构化摘要，包含以下章节（来自 CHANGELOG 确认）：
+
+| 章节 | 内容 |
+|------|------|
+| Initial task | 原始任务描述 |
+| Key Technical Concepts | 关键技术概念 |
+| Files and Code Sections | 相关文件和代码片段 |
+| Problem Solving | 问题解决过程 |
+| User Interactions | 用户交互（**安全相关指令必须逐字保留**） |
+| Issues/Problems Encountered | 遇到的问题 |
+| Work Completed | 已完成的工作 |
+| Current Work | 当前进行中的工作 |
+| Context for Continuing Work | 继续工作所需的上下文 |
+
+### 部分压缩模式
+
+支持两种保留模式：
+- **Suffix-preserving**：保留最近的消息不压缩
+- **Prefix-preserving**：保留最早的消息不压缩
+
+压缩后会注入继续提示："Continue the conversation from where it left off without asking the user any further questions. Resume directly..."
+
+### 容错机制
+
+- **重试**：如果压缩失败（如 API 错误），会进行重试
+- **熔断器**：连续失败 3 次后停止重试（CHANGELOG: "circuit breaker now stops after 3 attempts"）
+- **Reactive compaction**：首次压缩尝试会从原始请求的溢出大小开始，避免浪费一轮接近满上下文的重试
+
+### Hook 支持
+
+- **PreCompact**：压缩前触发，可以通过退出码 2 或返回 `{"decision":"block"}` 阻止压缩
+- **PostCompact**：压缩完成后触发
+
+### 已知问题（已修复）
+
+- 压缩后 deferred tools 的 input schema 丢失（已修复）
+- 子代理转录文件在 prompt-too-long 重试时重复写入（已修复）
+- 背景 agent 完成通知在压缩后丢失 output file path（已修复）
+- 压缩后 skills 被重新执行（已修复）
+
+---
+
+## 3. 工具结果截断
+
+工具输出有最大限制（约 32MB），超过时截断并显示 "... [output truncated - XKB removed]"。
+
+特定工具有独立限制，例如 `git status` 输出超过 2000 字符会被截断。
+
+MCP 工具结果在整个会话期间保留在上下文中。
+
+---
+
+## 4. Deferred Tool Loading（延迟工具加载）
+
+> **源码中不存在 "工具依赖 DAG" 的概念。**
+
+Claude Code 使用 **Deferred Tool Loading** 机制来减少初始 prompt 中的 token 数量：
+
+- **核心工具**（Read、Edit、Bash 等）始终可用
+- **延迟工具**（WebSearch、WebFetch 等）和 MCP 工具通过 `defer_loading` 标记延迟加载
+- 用户通过 `ToolSearch` 工具按需加载工具的 schema
+- MCP 服务器可以配置 `alwaysLoad: true` 来跳过延迟加载
+
+CHANGELOG 确认了多个相关修复：
+- 修复了 deferred tools 在子代理中不可用的问题
+- 修复了 ToolSearch 缺少启动后连接的 MCP 工具的问题
+- 修复了 `ANTHROPIC_BASE_URL` 下 ToolSearch 被禁用的问题
+
+---
+
+## 5. 多 Agent 上下文隔离
+
+Claude Code 的多 Agent 通信是通过 Agent SDK 的 bridge 机制实现的：
+
+- 子 Agent 有**独立的上下文窗口和系统提示**
+- 任务通过 Agent 工具分发，结果通过工具返回值传递
+- **不存在** "MemoryShareEvent" 或共享压缩记忆的机制
+- 子代理可以通过 `memory` 配置项（`'user' | 'project' | 'local'`）加载特定范围的记忆文件
+- 上下文压缩后，背景 agent 的完成通知可能丢失（已修复的 bug）
+
+---
+
+## 6. Auto-Memory 系统
+
+记忆存储在 `~/.claude/projects/<sanitized-cwd>/memory/` 目录下的 markdown 文件中。
+
+- 每个记忆文件有 frontmatter（name、description、type）
+- 通过 `MEMORY.md` 索引文件组织
+- 支持四种类型：`user`、`feedback`、`project`、`reference`
+- 记忆文件超过 1 天会附加年龄警告："This memory is X days old. Memories are point-in-time observations, not live state"
+- Auto-Dream 机制定期清理过期、重复的记忆文件
+
+> **源码中不存在**向量索引、语义搜索、多维索引、槽位分组等复杂机制。记忆就是纯 markdown 文件，通过文件路径和文件名组织。
+
+---
+
+## 与其他项目的对比
+
+| 机制 | Claude Code | Codex (Rust) | OpenCode (TypeScript) |
+|------|------------|--------------|----------------------|
+| 上下文压缩 | LLM 驱动 compaction | 无内置压缩 | 无内置压缩 |
+| 工具延迟加载 | ToolSearch + defer_loading | defer_loading 属性 | 无延迟加载 |
+| 记忆系统 | CLAUDE.md + Auto-Memory | 无内置记忆 | 无内置记忆 |
+| 工具结果限制 | ~32MB 截断 | 由 MCP 协议处理 | 由 MCP 协议处理 |
+| System Prompt | 动态构建 + prompt cache | AGENTS.md 静态加载 | AGENTS.md 静态加载 |
+
+---
+
+## 总结
+
+Claude Code 的上下文管理是一个**务实的工程实现**，而非理论上的复杂系统：
+
+- **没有** Dashboard 固定区域或上下文替换
+- **没有** ChatDashboard / 上下文锚定
+- **没有** MemoryShareEvent 多 Agent 共享
+- **没有** 工具依赖 DAG
+- **没有** 向量索引或多维索引
+
+实际机制是：**System prompt 动态构建 → LLM 驱动的 compaction → 工具结果截断 → Deferred tool loading → 文件系统记忆**。
+
+> 参考来源：Claude Code CHANGELOG（3946 行）、Agent SDK 类型定义、Claude Code 二进制分析

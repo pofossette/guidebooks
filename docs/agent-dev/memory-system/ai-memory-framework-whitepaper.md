@@ -5,6 +5,8 @@
 > 由三路并行子 Agent 深度源码审计 + 主控 Agent 横向对齐合成，基于开源项目实际源码分析。
 >
 > 审计日期：2026-05-21
+>
+> **2026-05-30 验证更新**：已通过各项目开源仓库交叉验证。Letta 准确度 90%+（v0.16.8），ReMe 核心架构准确（向量后端已修正），OpenViking 高层概念准确但部分源码级细节（类名、插件命名、MCP 工具数量）已修正。详见各独立审计报告的验证更新说明。
 
 ---
 
@@ -27,7 +29,7 @@
 | **核心数据抽象** | `viking://` 树状 URI + `Context` 记录 (L0/L1/L2) | `Block` (RAM) + `Passage` (Disk) + `Memory` (Page Table) | `ReMeLight` 内存管理器 + `ContextChecker` / `Compactor` 管道 |
 | **隐喻模型** | 文件系统：目录/文件/层级摘要 | 操作系统：进程/虚拟内存/页表/缺页中断 | 工程师：上下文窗口是有限预算，按需压缩 |
 | **核心痛点** | **检索失真与 Token 浪费** — 向量 RAG 的 flat search 丢失层级语义 | **长生命周期智能体** — Agent 需要跨 Session 持久记忆与自我修正 | **长对话/工具返回膨胀** — 复杂对话中 tool_result 导致上下文迅速溢出 |
-| **存储后端** | Rust RAGFS (插件式 VFS) + 向量数据库 (VikingDB/RocksDB) | PostgreSQL + pgvector + Block/Message ORM | ChromaDB/SQLite/Qdrant + Markdown 文件 + JSONL |
+| **存储后端** | Rust RAGFS (插件式 VFS) + 向量数据库 (VikingDB/RocksDB) | PostgreSQL + pgvector + Block/Message ORM | ChromaDB/Qdrant/Elasticsearch + Markdown 文件 + JSONL |
 | **面向用户** | Agent 开发平台（多租户 SaaS） | 独立 Agent 服务（有状态进程） | 工具箱组件（嵌入任意 Agent 框架） |
 | **侵入性** | 高 — 需要围绕 VFS 重构数据层 | 中 — Agent 必须使用 Letta 的 Agent Loop | **低** — 仅需接入 `pre_reasoning_hook` |
 
@@ -66,7 +68,7 @@
 - **Memory.compile()** (`schemas/memory.py:688`)：将 Block 渲染为 XML 注入 system prompt
 - **缺页中断**：`_rebuild_context_window()` (`letta_agent.py:1576`) 在 `ContextWindowExceededError` 时强制 summarizer 压缩
 - **Memory Tools** (`functions/function_sets/base.py`)：`core_memory_append/replace`、`memory_replace/insert`、`archival_memory_insert/search`
-- **Sleeptime Agent**：记忆管理 offload 到后台独立 Agent
+- **Sleeptime Agent**：记忆管理 offload 到后台独立 Agent（通过 `LETTA_SLEEPTIME_CORE` ToolType + `voice_sleeptime_agent.py` 实现）
 
 #### ReMe：会话自适应压缩
 
@@ -175,7 +177,7 @@ flowchart TB
 - 可读性与可调试性：所有持久化都是人类可读的 Markdown/JSONL
 
 **架构挑战**：
-- 依赖 AgentScope：深度绑定其 `Msg`/`ReActAgent`/`Toolkit` 抽象
+- 依赖 AgentScope：深度绑定其 `Msg`/`ReActAgent` 抽象（工具系统使用自定义 `FileIO` 类而非 AgentScope 的 `Toolkit`）
 - LLM 依赖：压缩本身需要调用 LLM，在 token 极度紧张时是"用 token 换 token"的悖论
 - 检索能力相对弱：文件搜索相比 OpenViking 层级检索和 Letta 结构化 Block 检索精度较低
 

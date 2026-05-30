@@ -2,12 +2,14 @@
 
 > Sub-Agent B (Letta Auditor) 审计成果
 > 审计日期：2026-05-21
+>
+> **2026-05-30 验证更新**：本报告准确度高（90%+），已通过 letta-ai/letta 仓库（v0.16.8）验证。修正：ToolType `LETTA_FILE` → `LETTA_FILES_CORE`；BaseBlock 补充了 template_name, is_template, hidden, description, metadata_ 等字段；Sleeptime Agent 实际通过 `LETTA_SLEEPTIME_CORE` + `voice_sleeptime_agent.py` 实现。
 
 ---
 
 ## 1. OS 虚拟内存模型架构
 
-Letta 将 LLM 上下文窗口建模为易失性 "RAM"（上下文内记忆），将持久化后端存储建模为 "Disk"（PostgreSQL/SQLite + 向量扩展）。这一类比通过 `Block`、`Memory`、`Passage`、`AgentState` 的分层系统实现。
+Letta（v0.16.8，2026-05-14 发布）将 LLM 上下文窗口建模为易失性 "RAM"（上下文内记忆），将持久化后端存储建模为 "Disk"（PostgreSQL/SQLite + 向量扩展）。这一类比通过 `Block`、`Memory`、`Passage`、`AgentState` 的分层系统实现。
 
 ### 1a. Memory Block — LLM 的 "RAM"
 
@@ -19,6 +21,12 @@ class BaseBlock:                    # line 13
     limit: int        # 字符上限
     label: str        # 语义名称（如 "human", "persona"）
     read_only: bool   # 是否只读
+    # 以下字段在源码中也存在但审计时未列出:
+    # template_name: str  — 模板名称
+    # is_template: bool   — 是否为模板
+    # hidden: bool        — 是否隐藏
+    # description: str    — 描述
+    # metadata_: dict     — 元数据
 
 class Block(BaseBlock):             # line 67
     id: str
@@ -231,7 +239,7 @@ LLM 返回 tool_call
 |----------|----------|------|
 | LETTA_CORE | `LettaCoreToolExecutor` | 记忆相关工具 |
 | LETTA_BUILTIN | `LettaBuiltinToolExecutor` | 代码执行、Web 工具 |
-| LETTA_FILE | `LettaFileToolExecutor` | 文件操作 |
+| LETTA_FILES_CORE | `LettaFilesToolExecutor` | 文件操作 |
 | SANDBOX | `SandboxToolExecutor` | 自定义工具（沙箱执行） |
 | EXTERNAL_MCP | `ExternalMCPToolExecutor` | MCP 工具 |
 

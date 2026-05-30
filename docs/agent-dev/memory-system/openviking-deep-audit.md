@@ -2,6 +2,8 @@
 
 > Sub-Agent A (OpenViking Auditor) 审计成果
 > 审计日期：2026-05-21
+>
+> **2026-05-30 验证更新**：本报告中的高层架构描述（VFS 范式、viking:// URI、L0/L1/L2 分层、FastAPI+RAGFS、13 种 embedding 提供商）已通过 volcengine/OpenViking 仓库验证为准确。但部分具体类名（如 HierarchicalRetriever、SemanticProcessor、SessionCompressor、MemoryExtractor、MemoryArchiver）和 RAGFS 插件命名方案基于源码审计推测，可能与当前版本不完全一致。MCP 端点工具数量已从 5 修正为 15。
 
 ---
 
@@ -254,14 +256,16 @@ score = sigmoid(log1p(active_count)) * exp(-decay_rate * age_days)
 
 Rust crate `crates/ragfs/` 实现插件式虚拟文件系统：
 
-| 插件 | 目录 | 用途 |
-|------|------|------|
-| localfs | `crates/ragfs/src/plugins/localfs/` | 本地文件系统 |
-| kvfs | `crates/ragfs/src/plugins/kvfs/` | 键值存储 |
-| memfs | `crates/ragfs/src/plugins/memfs/` | 内存文件系统 |
-| sqlfs | `crates/ragfs/src/plugins/sqlfs/` | SQL 存储 |
-| s3fs | `crates/ragfs/src/plugins/s3fs/` | S3 对象存储 |
-| queuefs | `crates/ragfs/src/plugins/queuefs/` | 队列文件系统（SemanticQueue/EmbeddingQueue） |
+| 插件 | 目录 | 用途 | 验证状态 |
+|------|------|------|----------|
+| localfs | `crates/ragfs/src/plugins/localfs/` | 本地文件系统 | 源码级名称待确认 |
+| kvfs | `crates/ragfs/src/plugins/kvfs/` | 键值存储 | 源码级名称待确认 |
+| memfs | `crates/ragfs/src/plugins/memfs/` | 内存文件系统 | 源码级名称待确认 |
+| sqlfs | `crates/ragfs/src/plugins/sqlfs/` | SQL 存储 | Cargo.toml 含 rusqlite/sqlx |
+| s3fs | `crates/ragfs/src/plugins/s3fs/` | S3 对象存储 | Cargo.toml 含可选 S3 feature |
+| queuefs | `crates/ragfs/src/plugins/queuefs/` | 队列文件系统（SemanticQueue/EmbeddingQueue） | 源码级名称待确认 |
+
+> **注意**：上述插件命名方案基于源码审计推测，`crates/ragfs/Cargo.toml` 中未见以这些名称注册的模块。具体插件目录结构需与当前版本源码核实。
 
 ### 队列架构 (`openviking/storage/queuefs/`)
 
@@ -311,7 +315,25 @@ Rust crate `crates/ragfs/` 实现插件式虚拟文件系统：
 
 ### MCP 集成
 
-`openviking/server/mcp_endpoint.py`：在 `/mcp` 暴露 MCP 端点，提供 5 个工具：search、read、store、forget、health。
+`openviking/server/mcp_endpoint.py`：在 `/mcp` 暴露 MCP 端点，提供 **15 个工具**：
+
+| 工具 | 用途 |
+|------|------|
+| `find` | 精确查找 |
+| `search` | 语义搜索 |
+| `read` | 读取内容 |
+| `list` | 列出目录 |
+| `remember` | 存储记忆 |
+| `add_resource` | 添加资源 |
+| `list_watches` | 列出监听 |
+| `cancel_watch` | 取消监听 |
+| `grep` | 内容搜索 |
+| `glob` | 文件匹配 |
+| `code_outline` | 代码大纲 |
+| `code_search` | 代码搜索 |
+| `code_expand` | 代码展开 |
+| `forget` | 遗忘记忆 |
+| `health` | 健康检查 |
 
 ### 会话与记忆管理 (`openviking/session/`)
 
