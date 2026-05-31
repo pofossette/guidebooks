@@ -2,5 +2,7 @@ title: trapmap
 nav:
   - index.md
   - 快速了解.md
-  - 需求和思考.md
-  - 选型.md
+  - 需求与思考.md
+  - 技术选型.md
+  - 实践记录
+  - 仓库全量文档: _repo

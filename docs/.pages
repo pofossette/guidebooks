@@ -1,9 +1,8 @@
 nav:
   - index.md
-  - dev-study-path
-  - agent-dev
+  - learning-path
+  - agent-engineering
+  - ai-coding
   - project
-  - coding-strategy
   - algo
-  - prompt.md
-  - world_model.md
+  - drafts

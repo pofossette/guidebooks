@@ -31,4 +31,5 @@ markdown_extensions:
 
 plugins:
   - search
-  - awesome-pages
+  - awesome-nav:
+      filename: .pages

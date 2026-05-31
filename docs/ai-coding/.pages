@@ -1,0 +1,7 @@
+title: AI 编码工作流
+nav:
+  - index.md
+  - 编码 Agent 机制: coding-agents
+  - GSD 暂停与恢复: workflow/gsd-pause-and-resume.md
+  - 代码图谱工具与技术路线: code-graph-tools-and-technical-routes.md
+  - Coding Agent 的 LSP 方案与各方态度: coding-agent-lsp-strategies.md

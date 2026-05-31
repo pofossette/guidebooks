@@ -1,34 +1,36 @@
 # Guidebooks
 
-这个仓库现在主要包含五类内容：
+这个仓库现在按“先理解方向，再进入专题，再回到项目实践”的思路整理为六个栏目：
 
-- `agent-dev/`：AI Agent、记忆系统、RAG、工作流与评测相关笔记
-- `dev-study-path/`：AI Agent 与传统后端的学习路径分析
+- `learning-path/`：学习方向、技术路线、世界模型与后端迁移分析
+- `agent-engineering/`：围绕“怎么构建 Agent 系统”的专题笔记
+- `ai-coding/`：围绕“怎么用 AI Coding Agent 做开发”的工具与方法
+- `project/`：具体项目的调研、选型、差距分析与实践记录
 - `algo/`：算法与题型整理
-- `coding-strategy/`：编码策略与项目方法论
-- `project/`：围绕具体项目沉淀的调研、选型与差异分析
+- `drafts/`：尚未并入正式栏目、但值得保留的写作草稿与提示
 
 ## 建议阅读路径
 
 如果你是第一次进入这个文档站，可以按下面顺序浏览：
 
-1. 从 [开发学习路径](dev-study-path/index.md) 了解技术方向与知识图谱
-2. 从 [Agent 开发专题](agent-dev/index.md) 进入工作流、记忆系统与 RAG
-3. 从 [项目专题](project/index.md) 查看具体项目的需求、选型与落地差异
-4. 最后回到 [编码策略](coding-strategy/index.md) 和 [算法笔记](algo/index.md) 做补充
+1. 从 [学习路径](learning-path/index.md) 建立方向感和知识地图
+2. 再进入 [Agent 工程](agent-engineering/index.md) 看系统设计、记忆、RAG 与评测
+3. 然后浏览 [AI 编码工作流](ai-coding/index.md) 看 Coding Agent、Spec 工作流和工程纪律
+4. 需要落地案例时进入 [项目专题](project/index.md)
+5. 最后回到 [算法笔记](algo/index.md) 或 [草稿箱](drafts/index.md) 做补充
 
-## 当前结构优化说明
+## 这次结构调整的核心原则
 
-- 保留 `docs/project/archlinux-missionary/_repo` 与 `docs/project/trapmap/_repo` 两个 submodule 原位不动
-- 优先通过索引页与导航排序提升可读性，不直接改动已存在的大量正文笔记
-- 顶层零散专题暂时保留为独立页面，避免和正在编辑中的文档冲突
+- 把“开发 Agent”与“用 Agent 开发”拆开，避免一个栏目里同时混入系统设计和 Coding Agent 研究
+- 把重复、别扭或符号化的命名收敛成更直白的栏目名和文件名
+- 顶层不再保留孤立单页，零散内容要么归档到对应栏目，要么进入草稿箱
+- `docs/project/archlinux-missionary/_repo` 与 `docs/project/trapmap/_repo` 两个 submodule 继续保持原位，不参与迁移
 
 ## 快速入口
 
-- [Agent 开发专题](agent-dev/index.md)
-- [开发学习路径](dev-study-path/index.md)
-- [算法笔记](algo/index.md)
-- [编码策略](coding-strategy/index.md)
+- [学习路径](learning-path/index.md)
+- [Agent 工程](agent-engineering/index.md)
+- [AI 编码工作流](ai-coding/index.md)
 - [项目专题](project/index.md)
-- [Prompt 选题草稿](prompt.md)
-- [World Model 专题](world_model.md)
+- [算法笔记](algo/index.md)
+- [草稿箱](drafts/index.md)
