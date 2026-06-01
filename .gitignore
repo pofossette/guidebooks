@@ -20,6 +20,9 @@ env/
 # MkDocs
 site/
 
+# Node tooling
+node_modules/
+
 # IDE/Editor
 .vscode/
 .idea/

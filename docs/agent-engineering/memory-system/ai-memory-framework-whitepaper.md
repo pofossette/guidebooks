@@ -122,7 +122,7 @@
 flowchart TB
     subgraph "通用场景"
         START([对话开始]) --> CONV[100轮对话进行中]
-        CONV --> PREF[第87轮：用户表达偏好<br/>"我喜欢用 Rust 写 CLI 工具"]
+        CONV --> PREF[第87轮：用户表达偏好<br/>我喜欢用 Rust 写 CLI 工具]
         PREF --> END([Session 结束])
     end
 

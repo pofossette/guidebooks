@@ -1,0 +1,35 @@
+name: docs-checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  docs-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm check:mermaid
+
+      - run: uv lock && uv sync
+        env:
+          UV_INDEX_URL: https://pypi.org/simple
+
+      - run: uv run mkdocs build

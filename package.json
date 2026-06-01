@@ -1,0 +1,13 @@
+{
+  "name": "guidebooks-doc-tools",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "check:mermaid": "MERMAID_CHECK_IGNORE_DIRS=_repo node scripts/check-mermaid.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "mermaid": "^11.15.0"
+  }
+}
