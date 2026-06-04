@@ -4,3 +4,4 @@ nav:
   - binary-tree.md
   - graph.md
   - divide-conquer-dp-binary-search.md
+  - dp.md

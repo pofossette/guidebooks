@@ -49,6 +49,14 @@ https://github.com/hardikpandya/stop-slop
 
 一句话概括：一个用于去除 AI 文风痕迹的 skill 文件，目标是让英文 prose 更自然、少”AI 味”。
 
+### impeccable
+
+https://github.com/pbakaus/impeccable
+
+一句话概括：一个面向 AI 编码工具的设计技能系统，通过 7 个设计领域参考文件（排版、色彩、空间、动效、交互、响应式、UX 写作）和 27 条确定性反模式规则，减少 AI 生成的"典型 AI 味"设计（Inter 万能字体、紫蓝渐变、卡片套卡片等）。
+
+支持 Claude Code、Cursor、Gemini CLI、Codex CLI、Kiro、Trae 等多种工具，CLI 可独立运行反模式检测（无需 LLM/API key）。安装：`npx impeccable skills install`。
+
 ### skill (emilkowalski)
 
 https://github.com/emilkowalski/skill
@@ -85,6 +93,19 @@ https://github.com/microsoft/agent-governance-toolkit
 https://github.com/anthropics/claude-plugins-official
 
 一句话概括：Anthropic 官方维护的 Claude Code 高质量插件目录，用来集中发布和管理官方认可插件。
+
+### markitdown
+
+https://github.com/microsoft/markitdown
+
+一句话概括：微软出品的轻量级 Python 工具，将 PDF、Word、Excel、PPT、图片等格式统一转换为 Markdown，方便送入 LLM 处理。
+
+特点：
+
+- 支持主流办公格式和图片（含 OCR），保留标题、列表、表格等结构
+- 支持音频转录和视频处理（需 Azure 集成）
+- 插件系统，可扩展第三方格式
+- 141k stars，社区活跃
 
 ## 安全与对抗能力
 
