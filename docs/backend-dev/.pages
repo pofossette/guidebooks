@@ -1,1 +1,18 @@
 title: 后端开发
+nav:
+  - index.md
+  - 面向 TS 前端开发者的 Agent 后端基础速成计划.md
+  - TS 前端开发者转向 Agent 开发的后端系统设计示例方案（面试向）.md
+  - 计算机网络知识串讲指南.md
+  - 操作系统知识串讲指南.md
+  - 高可用、高性能与分布式基础思路总览.md
+  - 系统设计
+  - PostgreSQL
+  - MongoDB
+  - Elasticsearch
+  - Redis
+  - agent-backend
+  - 设计模式
+  - 高可用
+  - 高性能
+  - 分布式
