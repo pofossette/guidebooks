@@ -10,6 +10,8 @@ nav:
   - PostgreSQL
   - MongoDB
   - Elasticsearch
+  - MQ
+  - 中间件
   - Redis
   - agent-backend
   - 设计模式

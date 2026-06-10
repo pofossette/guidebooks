@@ -9,6 +9,8 @@
 - [PostgreSQL](./PostgreSQL/)
 - [MongoDB](./MongoDB/)
 - [Elasticsearch](./Elasticsearch/)
+- [MQ](./MQ/)
+- [中间件](./中间件/)
 - [Agent 后端基础](./agent-backend/)
 - [设计模式](./设计模式/)
 - [分布式](./分布式/)
