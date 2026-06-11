@@ -4,9 +4,13 @@
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "check:mermaid": "MERMAID_CHECK_IGNORE_DIRS=_repo node scripts/check-mermaid.mjs"
+    "check:mermaid": "MERMAID_CHECK_IGNORE_DIRS=_repo node scripts/check-mermaid.mjs",
+    "prepare": "husky",
+    "sync:pages-index": "node scripts/sync-pages-index.mjs",
+    "sync:pages-index:staged": "node scripts/sync-pages-index.mjs --staged --stage"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "mermaid": "^11.15.0"
   }

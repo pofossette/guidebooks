@@ -8,6 +8,7 @@
 - `eval/`：Agent 与 RAG 的评测方法
 - `recommendation-systems/`：搜索、推荐与内容理解的系统案例
 - `self-evolve/`：Agent 自我演化相关记录
+- `vendor-updates/`：Anthropic、OpenAI、Google、Meta 等官方博客的近期 AI / agent 动态速记
 
 ## 推荐阅读顺序
 

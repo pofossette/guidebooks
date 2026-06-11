@@ -1,0 +1,1 @@
+pnpm --config.store-dir=/tmp/pnpm-store run sync:pages-index:staged
