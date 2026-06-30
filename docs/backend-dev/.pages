@@ -7,10 +7,13 @@ nav:
   - 操作系统知识串讲指南.md
   - 高可用、高性能与分布式基础思路总览.md
   - 系统设计
+  - LangChain TS
+  - NestJS
   - PostgreSQL
   - MongoDB
   - Elasticsearch
   - MQ
+  - 微服务
   - 中间件
   - Redis
   - agent-backend

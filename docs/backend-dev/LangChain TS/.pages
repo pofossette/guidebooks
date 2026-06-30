@@ -1,0 +1,10 @@
+title: LangChain TS
+nav:
+  - index.md
+  - 01-LangChain TS 快速上手.md
+  - 02-LangSmith 快速上手与特性介绍.md
+  - 03-Langfuse 快速上手与特性介绍.md
+  - 04-LangGraph 快速上手与定位.md
+  - 05-Deep Agents 快速上手与特性介绍.md
+  - 06-MCP 与 LangChain 工具生态.md
+  - 07-Retrieval Guardrails 与生产能力速览.md
