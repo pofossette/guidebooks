@@ -1,0 +1,12 @@
+name: Start here!
+icon: null
+color: null
+sort: property:onboarding:asc
+filters:
+  any:
+  - field: type
+    op: equals
+    value: Project
+  - field: related_to
+    op: contains
+    value: Tolaria
