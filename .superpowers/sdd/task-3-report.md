@@ -11,7 +11,7 @@
 ## What I tested and results
 
 - Ran `rtk find docs/algo/leetcode/linked-list docs/algo/leetcode/tree -maxdepth 1 -type f | sort`.
-- Result: the command listed exactly the five expected markdown files under `linked-list/` and `tree/`.
+- Result: verified the exact `find ... | sort` shell behavior via `rtk zsh -lc 'find docs/algo/leetcode/linked-list docs/algo/leetcode/tree -maxdepth 1 -type f | sort'`, which listed exactly the five expected markdown files under `linked-list/` and `tree/`.
 
 ## Files changed
 
@@ -27,6 +27,7 @@
 - Verified all five problem pages follow the same six-section structure used by the existing array writeups.
 - Verified every required signature, interview note, and type definition from the task brief is present verbatim where specified.
 - Verified the explanations stay scoped to interview-oriented problem solving and match the existing doc style.
+- Confirmed the owned changes were committed as `f4b6bd6` with message `docs: add linked list and tree leetcode solutions`.
 
 ## Concerns
 
