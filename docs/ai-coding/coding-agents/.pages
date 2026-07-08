@@ -1,6 +1,9 @@
-title: 编码 Agent 机制
+title: AI 编码 Agent 机制
 nav:
   - index.md
-  - agent-architecture-and-prompting.md
-  - agent-task-and-goal-strategies.md
-  - source-evidence-and-code-index.md
+  - 阅读地图: overview-and-reading-map.md
+  - 统一证据页: source-evidence-and-code-index.md
+  - 专题目录:
+      - 设计原则主线: design-principles
+      - 横向比较: comparative
+      - 证据索引: evidence
