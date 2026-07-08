@@ -1,1 +1,23 @@
 title: 编码 Agent 机制
+nav:
+  - index.md
+  - 面试题+claude code上下文管理.md
+  - 三大AI编码Agent架构深度对比.md
+  - 自动记忆&五层上下文压缩管道.md
+  - claude-code-prompt-strategy.md
+  - codex-prompt-strategy.md
+  - compaction-tool-output-strategy-analysis.md
+  - context-management-enhanced.md
+  - context-management.md
+  - file-editing-comparison.md
+  - goal-command-strategy-claude-code-vs-codex.md
+  - multi-agent-collaboration-patterns.md
+  - multi-agent.md
+  - opencode-prompt-strategy.md
+  - prompt-assembly-example.md
+  - prompt-construction-strategies.md
+  - queryloop.md
+  - sandbox-security-comparison.md
+  - todo-system-analysis.md
+  - tool-system.md
+  - xml-system-prompt-methodology.md

@@ -14,6 +14,11 @@ Three AI coding agents analyzed for their prompt engineering architecture:
 | [OpenCode](./opencode-prompt-strategy.md) | OpenCode (SST) | TypeScript | AI SDK (multi-provider) |
 | [Codex](./codex-prompt-strategy.md) | OpenAI Codex CLI | Rust | OpenAI Responses API |
 
+## Multi-Agent
+
+- [Multi-Agent 协作模式分类总览](./multi-agent-collaboration-patterns.md)
+- [AI 编码 Agent 多 Agent 机制对比（源码校对版）](./multi-agent.md)
+
 ## Cross-Cutting Comparison
 
 ### Context Budget Strategy
