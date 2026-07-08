@@ -1,61 +1,55 @@
-# AI Coding Agent Prompt Construction Strategies
+# AI 编码 Agent 机制总览
 
-如果你是从 [AI 编码工作流](../index.md) 进入这个子栏目，这里更适合回答三个问题：
+这一组文档现在只保留一条主线，重点回答三件事：
 
-- Claude Code、Codex、OpenCode 这类工具的系统提示词是怎么拼出来的
-- 它们怎么做上下文裁剪、工具描述和长期可扩展性设计
-- 不同 Coding Agent 在文件编辑、多 Agent、沙箱和上下文管理上的差异是什么
+- `Claude Code`、`OpenCode`、`Codex` 这类 AI 编码 agent 到底各自把重点放在哪一层
+- 提示词、上下文、工具、多 agent、todo、目标这些机制怎样拼成一套可持续运行的系统
+- 哪些旧结论需要订正，尤其是 `todo/task` 和 `goal` 的边界
 
-Three AI coding agents analyzed for their prompt engineering architecture:
+## 推荐阅读顺序
 
-| Document | Project | Language | API |
-|---|---|---|---|
-| [Claude Code](./claude-code-prompt-strategy.md) | Anthropic Claude Code | TypeScript | Anthropic Messages API |
-| [OpenCode](./opencode-prompt-strategy.md) | OpenCode (SST) | TypeScript | AI SDK (multi-provider) |
-| [Codex](./codex-prompt-strategy.md) | OpenAI Codex CLI | Rust | OpenAI Responses API |
+1. [架构、提示词与上下文策略](./agent-architecture-and-prompting.md)
+2. [任务、Todo 与目标策略](./agent-task-and-goal-strategies.md)
+3. [源码与证据索引](./source-evidence-and-code-index.md)
 
-## Multi-Agent
+## 这组文档现在怎么分工
 
-- [Multi-Agent 协作模式分类总览](./multi-agent-collaboration-patterns.md)
-- [AI 编码 Agent 多 Agent 机制对比（源码校对版）](./multi-agent.md)
+### 1. 架构、提示词与上下文策略
 
-## Cross-Cutting Comparison
+看这一页，如果你关心的是：
 
-### Context Budget Strategy
+- 系统提示词怎么组装
+- 项目规则和环境信息怎么注入
+- 上下文为什么会压缩成不同形状
+- 多 agent / 子 agent 在三套系统里的角色差异
 
-| Aspect | Claude Code | OpenCode | Codex |
-|---|---|---|---|
-| Safety buffer | 13K tokens (autocompact) + 20K (output) | 20K tokens (COMPACTION_BUFFER) | 5% of context window |
-| Compact trigger | 95% effective context - buffer | `usable = input - reserved` | 90% of context window |
-| Preserve recent | 5 files + plan + skills (token-budgeted) | 25% of usable (2K-8K tokens) | 20K tokens of recent user messages |
-| Tool result cap | 50K chars per result, 200K per message | 50KB / 2000 lines per result | Per-model TruncationPolicy |
+入口： [架构、提示词与上下文策略](./agent-architecture-and-prompting.md)
 
-### Compression Layers
+### 2. 任务、Todo 与目标策略
 
-| Layer | Claude Code | OpenCode | Codex |
-|---|---|---|---|
-| 1 | Tool result disk persistence | Tool output truncation + file fallback | Middle-truncation of tool outputs |
-| 2 | Snip compaction (history removal) | Pruning (40K protected, 20K min) | Context diff (only changed fragments resent) |
-| 3 | Microcompact (clear old tool results) | Compaction with tail preservation | Pre-turn compaction |
-| 4 | Context collapse | -- | Mid-turn compaction |
-| 5 | Auto-compact (full summarization) | -- | Inline/Remote v1/v2 compaction |
-| 6 | Reactive compact (413 error recovery) | -- | -- |
+看这一页，如果你关心的是：
 
-### U-Shaped Attention
+- `TodoWrite`、`task`、`/goal` 到底是不是一回事
+- `Claude Code` 的 `/goal` 现在应该怎样准确描述
+- `OpenCode` 为什么不该被写成 `Codex` 式目标运行时
+- `Codex` 的线程级 goal 状态机到底和 checklist 有什么区别
 
-| Approach | Claude Code | OpenCode | Codex |
-|---|---|---|---|
-| Beginning | Static system prompt (global cache) | Provider base prompt (cache-stable header) | Base instructions in `instructions` field |
-| End | Recent messages + restored files/skills | Tail preservation (last 2 turns, 2K-8K tokens) | Recent user messages (20K token budget) |
-| Middle | Compressed summary + cleared tool outputs | Summary + pruned tool outputs | Summary + dropped assistant/tool history |
-| Unique | Post-compact attachments (files, MCP, skills) | `filterCompacted()` U-shape reordering | Mid-turn reinjection of initial context before last user message |
+入口： [任务、Todo 与目标策略](./agent-task-and-goal-strategies.md)
 
-### System Prompt Architecture
+### 3. 源码与证据索引
 
-| Aspect | Claude Code | OpenCode | Codex |
-|---|---|---|---|
-| Structure | `string[]` with cache boundary marker | Single string from layered join | `instructions` field on API request |
-| Caching | Split into `global` scope blocks | 2-part: header (cache-stable) + body | Not explicitly managed (Responses API) |
-| Project context | CLAUDE.md files (hierarchical, `@include`) | AGENTS.md / CLAUDE.md (first-match) | AGENTS.md (walk-up collection, budgeted) |
-| Environment | Inline in system prompt | `<env>` block in system prompt | `EnvironmentContext` fragment (user role) |
-| Tool descriptions | Inline in system prompt as function schemas | AI SDK `tool()` objects | Responses API `tools` array |
+看这一页，如果你需要：
+
+- 快速找到支撑结论的本地源码位置
+- 查看 `Claude Code /goal` 本次订正用到的最新公开资料
+- 对照本地实现和文档判断，继续补充或复核
+
+入口： [源码与证据索引](./source-evidence-and-code-index.md)
+
+## 先记住这三个判断
+
+- `Claude Code` 最强的是会话层 prompt 组织、工具纪律和任务追踪，`/goal` 是强自动续跑控制面，但不宜直接写成 Codex 式线程目标状态机。
+- `OpenCode` 最强的是持久化会话 todo、`task/subagent` 执行控制，以及 `permission/runtime/control-plane` 的组合。
+- `Codex` 最强的是 thread/turn/goal 的后端建模，它是三者里线程级 goal 状态机最明确的一家。
+
+如果你之前看过旧文，这一版最大的变化就是：不再把所有“任务推进能力”混写成同一种机制。

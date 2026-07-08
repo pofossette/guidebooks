@@ -4,13 +4,13 @@
 
 这一栏现在专门收拢“怎么用 AI Coding Agent 做开发”的内容，分成三部分：
 
-- [编码 Agent 机制](./coding-agents/index.md)：Claude Code、Codex、OpenCode 一类工具的上下文、工具和 prompt 结构
+- [编码 Agent 机制](./coding-agents/index.md)：整理 Claude Code、Codex、OpenCode 一类工具的提示词、上下文、工具、任务与目标机制。
 - [GSD 暂停与恢复](./workflow/gsd-pause-and-resume.md)：针对长流程开发的中断与续跑机制
 - 本页：各类规范驱动、计划驱动、交付驱动工作流工具的横向判断
 
 ## 扩展专题
 
-- [编码 Agent 机制](./coding-agents/index.md)：如果你更关心 Claude Code / Codex / OpenCode 这类工具本身怎么工作，先从这里进入。
+- [编码 Agent 机制](./coding-agents/index.md)：如果你更关心 Claude Code / Codex / OpenCode 这类工具本身怎么工作，先从这里进入；现在这组文档已经收敛成“总览 + 两篇专题 + 证据索引”。
 - [GSD 暂停与恢复](./workflow/gsd-pause-and-resume.md)：补充长流程开发里最关键的 handoff 与恢复问题。
 - [代码图谱工具与技术路线](./code-graph-tools-and-technical-routes.md)：补充 `Graphify`、`CodeGraph`、`Understand Anything`、Meta `Glean` 与预计算上下文路线，重点看这类“图谱”到底在建什么中间层。
 - [Coding Agent 的 LSP 方案与各方态度](./coding-agent-lsp-strategies.md)：补充 `Oh My OpenCode`、`OpenCode`、Anthropic、OpenAI、Meta 对 agent 配 LSP 的实现方案和公开态度。
