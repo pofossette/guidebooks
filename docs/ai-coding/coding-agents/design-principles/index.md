@@ -8,3 +8,7 @@
 
 - [架构、提示词与上下文策略](../agent-architecture-and-prompting.md)
 - [任务、Todo 与目标策略](../agent-task-and-goal-strategies.md)
+
+如果你当前主要在看命令执行边界，建议把这篇插到 `tool protocol` 与 `sandbox` 之间：
+
+- [Bash 工具与命令执行](./bash-tool-design-and-command-execution.md)

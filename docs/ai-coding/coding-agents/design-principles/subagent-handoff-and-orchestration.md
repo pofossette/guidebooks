@@ -10,9 +10,9 @@
 先给结论：
 
 - `Claude Code` 对 subagent 最激进，既支持 specialized subagent，也支持 fork yourself；它把 handoff contract 直接写进 Agent tool prompt 和 `createSubagentContext()` 的隔离策略里。证据类型：本地源码。`claude-code-src/src/tools/AgentTool/prompt.ts`、`src/tools/AgentTool/forkSubagent.ts`、`src/utils/forkedAgent.ts`
-- `OpenCode` 当前公开材料更强调 background job / background agent dispatch 的 durable status 与取消/续跑语义。证据类型：官方文档。`opencode/specs/v2/todo.md`、`opencode/specs/v2/session.md`
+- `OpenCode` 当前公开材料更强调 background job / background agent dispatch 的 durable status 与取消/续跑语义；其中 `background bash jobs` 和 `background agent dispatch` 被并列写成待收敛能力。证据类型：官方文档。`opencode/specs/v2/todo.md`、`opencode/specs/v2/session.md`
 - 由此更稳妥的归纳是：它当前公开重点先放在“编排一致性”；至于不是把重点放在大规模公开子代理 prompt contract，现有材料更适合标成推断。证据类型：官方文档 + 推断。依据公开规格当前暴露面的侧重点。
-- `Codex` 已经把 subagent/thread spawn、parent/child 拓扑、approval routed through guardian thread、subagent analytics source 做进协议和状态层，所以它比前两家更像“线程编排系统”。证据类型：本地源码。`codex/codex-rs/agent-graph-store/src/store.rs`、`codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs`、`codex-rs/analytics/src/events.rs`
+- `Codex` 已经把 subagent/thread spawn、parent/child 拓扑、delegated approval routed through the parent session for guardian review、subagent analytics source 做进协议和状态层，所以它比前两家更像“线程编排系统”。证据类型：本地源码。`codex/codex-rs/agent-graph-store/src/store.rs`、`codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs`、`codex-rs/analytics/src/events.rs`
 
 ```mermaid
 sequenceDiagram
@@ -92,6 +92,7 @@ sequenceDiagram
 
 - 子任务能否 durable 观察；
 - 是否能在取消、恢复、换 owner 后保持一致；
+- bash 与 agent 两类后台执行是否共享一套 completion/cancellation contract；
 
 而不是先定义一套花哨的子代理角色 prompt。  
 证据类型：推断。依据 `specs/v2/todo.md` 的优先级排序。

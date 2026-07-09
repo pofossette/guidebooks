@@ -7,12 +7,12 @@
 - `Claude Code` 的隔离边界更像“会话运行时上的安全护栏”：有 permission mode、可选 sandbox、额外工作目录、remote/bridge 环境差异，但公开主叙事不是一个强协议化 sandbox profile。
   - 证据类型：本地源码。`claude-code-src/src/Tool.ts`、`src/bridge/sessionRunner.ts`、`src/bridge/bridgeUI.ts`
   - 证据类型：公开 issue / discussion。`anthropics/claude-code#59969`、`#63988`
-- `OpenCode` 当前更强调 `Location / workspace / permission / process boundary`，而不是对外暴露一组像 `read-only/workspace-write` 那样的统一 sandbox policy 名称。
-  - 证据类型：本地源码。`opencode/packages/core/src/filesystem.ts`、`src/cross-spawn-spawner.ts`、`src/permission.ts`
+- `OpenCode` 当前更强调 `Location / workspace / permission / process boundary`，而不是对外暴露一组像 `read-only/workspace-write` 那样的统一 sandbox policy 名称；它的 shell 工具也明确还在补 durable background bash 语义。
+  - 证据类型：本地源码。`opencode/packages/core/src/filesystem.ts`、`src/cross-spawn-spawner.ts`、`src/permission.ts`、`src/tool/bash.ts`
   - 证据类型：官方文档。仓库内 `opencode/specs/v2/tools.md`、仓库根 `TODO.md`
 - `Codex` 在三家里把隔离面写得最显式：thread protocol 里有 `sandbox`/`permissions`，沙箱策略里明确区分 `read-only`、`workspace-write`、`danger-full-access`、`external-sandbox`，并继续分解 writable roots、network access、临时目录排除与独立命令执行。
   - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/shared.rs`、`permissions.rs`、`thread.rs`、`command_exec.rs`
-  - 证据类型：官方文档。`codex/codex-rs/README.md`
+  - 证据类型：官方文档。`codex/codex-rs/core/README.md`、`codex/docs/sandbox.md`
   - 证据类型：公开 issue / discussion。`openai/codex#14068`、`#5041`、`#12996`、`#28281`
 
 ## 先把六层隔离分开
@@ -100,6 +100,8 @@ flowchart TD
 
 - `cross-spawn-spawner.ts` 显式整理 `cwd`、`shell` 等子进程参数，说明 shell 执行是受统一进程启动器约束的。
   - 证据类型：本地源码。`opencode/packages/core/src/cross-spawn-spawner.ts`
+- `tool/bash.ts` 当前只承诺最小 V2 shell boundary：工作目录解析、external directory approval、命令资源审批、timeout 与 capture 边界，而不是完整后台 shell orchestration。
+  - 证据类型：本地源码。`opencode/packages/core/src/tool/bash.ts`
 - `tools.md` 明确说 interruption 是 cancellation 机制，并要求工具不要吞掉 interruption，说明 shell/process 隔离不仅是路径问题，也是 effect lifecycle 问题。
   - 证据类型：官方文档。仓库内 `opencode/specs/v2/tools.md`
 
@@ -126,9 +128,10 @@ flowchart TD
 所以更稳的写法是：
 
 - OpenCode 已经有明确的 location/process/permission 边界；
-- 但它当前公开主叙事仍是 runtime decomposition，而不是统一命名的 sandbox 产品面。
+- 但它当前公开主叙事仍是 runtime decomposition，而不是统一命名的 sandbox 产品面；
+- background bash jobs 的 durable 观察、completion delivery、explicit cancellation 仍是设计中能力，不宜写成稳定成品。
 
-证据类型：推断。依据 `filesystem.ts`、`cross-spawn-spawner.ts`、`permission.ts`、`TODO.md`。
+证据类型：推断。依据 `filesystem.ts`、`cross-spawn-spawner.ts`、`permission.ts`、`tool/bash.ts`、`TODO.md`。
 
 ## Codex：把隔离对象写进协议和 profile
 
@@ -149,8 +152,8 @@ flowchart TD
 
 - `workspace-write` 不只是“当前目录可写”，还显式带 `writable_roots`。
   - 证据类型：本地源码。`codex/.../permissions.rs`
-- 官方 README 还补充：在 `workspace-write` 下，`~/.codex/memories` 也会加入 writable roots。
-  - 证据类型：官方文档。`codex/codex-rs/README.md`
+- `workspace-write` 的公开文档能直接支撑的是“写入发生在 configured writable roots 内，`.git` 与 `.codex` 仍保持只读”。
+  - 证据类型：官方文档。`codex/codex-rs/core/README.md`
 
 ### 网络
 
@@ -182,8 +185,8 @@ flowchart TD
 
 ### 容器与进程隔离
 
-- 官方 README 直接写出 `codex sandbox` 会按宿主平台使用 Seatbelt、Linux sandbox 或 Windows restricted token。
-  - 证据类型：官方文档。`codex/codex-rs/README.md`
+- `codex-core` 文档直接区分了 macOS Seatbelt、Linux sandbox helper / bubblewrap 路径，以及 Windows restricted-token / elevated backend 的执行差异。
+  - 证据类型：官方文档。`codex/codex-rs/core/README.md`
 - `command_exec` 又提供“在 server sandbox 中运行 standalone command”的独立接口，而 `process.rs` 则是“不经过 Codex sandbox 的 host process”。
   - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/command_exec.rs`、`process.rs`
 

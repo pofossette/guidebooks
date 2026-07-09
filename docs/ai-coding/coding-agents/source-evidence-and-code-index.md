@@ -7,7 +7,7 @@
 - `按设计问题找证据`：先看某个设计原则需要哪些本地源码、官方文档、公开讨论。
 - `按系统找证据`：回到 `Claude Code`、`OpenCode`、`Codex` 的核心模块与外部资料。
 
-检索日期：**2026-07-08**
+检索日期：**2026-07-09**
 
 ## 怎么使用这页
 
@@ -40,9 +40,10 @@ flowchart TD
 | 设计问题 | Claude Code | OpenCode | Codex |
 |---|---|---|---|
 | 工具协议与控制面 | `src/Tool.ts`、`src/QueryEngine.ts`、`src/bridge/bridgeMessaging.ts` | `packages/core/src/tool/registry.ts`、`src/permission.ts`、仓库内 `specs/v2/tools.md` | `app-server-protocol/src/protocol/v2/thread.rs`、`shared.rs`、`ext/goal/src/spec.rs` |
+| bash/shell 工具与命令执行 | `src/tools/BashTool/BashTool.tsx`、`src/tools/BashTool/bashPermissions.ts`、`src/tools/BashTool/readOnlyValidation.ts`、`src/tools/BashTool/shouldUseSandbox.ts` | `packages/core/src/tool/bash.ts`、`src/cross-spawn-spawner.ts`、仓库内 `specs/v2/tools.md`、`specs/v2/todo.md` | `app-server-protocol/src/protocol/v2/command_exec.rs`、`process.rs`、`permissions.rs`、`thread.rs` |
 | 规则注入与项目说明 | `src/bootstrap/state.ts`、`src/QueryEngine.ts` | `packages/core/src/instruction-context.ts`、`src/session/context-epoch.ts`、仓库内 `specs/v2/session.md` | `app-server-protocol/src/protocol/v2/thread.rs`、`docs/agents.md` |
 | 上下文压缩与重建 | `src/compact.ts`、`src/QueryEngine.ts`、`src/utils/sessionRestore.ts` | `packages/core/src/session/compaction.ts`、`src/session/history.ts`、`src/session/runner/llm.ts` | `app-server-protocol/src/protocol/v2/thread_data.rs`、`ext/goal/src/runtime.rs` |
-| 权限、审批、人工接管 | `src/Tool.ts`、`src/QueryEngine.ts`、官方 hooks 文档 | `packages/core/src/permission.ts`、`src/tool/AGENTS.md`、仓库内 `specs/v2/tools.md` | `app-server-protocol/src/protocol/v2/shared.rs`、`permissions.rs`、`docs/approvals.md` |
+| 权限、审批、人工接管 | `src/Tool.ts`、`src/QueryEngine.ts`、官方 hooks 文档 | `packages/core/src/permission.ts`、`src/tool/AGENTS.md`、仓库内 `specs/v2/tools.md` | `app-server-protocol/src/protocol/v2/shared.rs`、`permissions.rs`、`codex/docs/sandbox.md` |
 | 任务、Todo 与 Goal | `src/tools/TodoWriteTool/*`、`TaskCreateTool/*`、官方 `/goal` 文档 | `packages/core/src/session/todo.ts`、`src/tool/todowrite.ts`、仓库内 `specs/v2/todo.md` | `ext/goal/src/spec.rs`、`tool.rs`、`runtime.rs`、`accounting.rs` |
 | 子代理与编排 | `src/tools/AgentTool/*`、`src/utils/forkedAgent.ts` | `packages/core/src/background-job.ts`、仓库内 `specs/v2/todo.md`、`specs/v2/session.md` | `agent-graph-store/src/store.rs`、`thread_data.rs`、`analytics/src/events.rs` |
 | 中断、恢复、可追溯 | `src/utils/sessionRestore.ts`、`src/assistant/sessionHistory.ts`、官方 `/goal`/hooks | `packages/core/src/session/input.ts`、`src/session/history.ts`、仓库根 `TODO.md` | `app-server-protocol/src/protocol/v2/thread.rs`、`state/src/audit.rs`、`ext/goal/src/runtime.rs` |
@@ -65,6 +66,10 @@ flowchart TD
 - `claude-code-src/src/Tool.ts`
 - `claude-code-src/src/bridge/bridgeMessaging.ts`
 - `claude-code-src/src/bridge/sessionRunner.ts`
+- `claude-code-src/src/tools/BashTool/BashTool.tsx`
+- `claude-code-src/src/tools/BashTool/bashPermissions.ts`
+- `claude-code-src/src/tools/BashTool/readOnlyValidation.ts`
+- `claude-code-src/src/tools/BashTool/shouldUseSandbox.ts`
 
 #### Task / Goal / Subagent
 
@@ -93,7 +98,9 @@ flowchart TD
 - `opencode/packages/core/src/permission.ts`
 - `opencode/packages/core/src/tool/registry.ts`
 - `opencode/packages/core/src/tool/AGENTS.md`
+- `opencode/packages/core/src/tool/bash.ts`
 - `opencode/packages/core/src/tool/todowrite.ts`
+- `opencode/packages/core/src/cross-spawn-spawner.ts`
 - `opencode/packages/opencode/src/control-plane/workspace.ts`
 
 #### Todo / Background / Specs
@@ -113,6 +120,8 @@ flowchart TD
 - `codex/codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs`
 - `codex/codex-rs/app-server-protocol/src/protocol/v2/shared.rs`
 - `codex/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs`
+- `codex/codex-rs/app-server-protocol/src/protocol/v2/command_exec.rs`
+- `codex/codex-rs/app-server-protocol/src/protocol/v2/process.rs`
 
 #### Goal / Runtime / Accounting
 
@@ -173,10 +182,10 @@ flowchart TD
 #### 官方文档
 
 - Codex guide：<https://developers.openai.com/codex>
-- CLI docs：<https://github.com/openai/codex/tree/main/codex-rs/docs>
-- Approvals：<https://github.com/openai/codex/blob/main/codex-rs/docs/approvals.md>
-- Sandbox：<https://github.com/openai/codex/blob/main/codex-rs/docs/sandbox.md>
-- AGENTS：<https://github.com/openai/codex/blob/main/codex-rs/docs/agents.md>
+- Security guide：<https://developers.openai.com/codex/security>
+- AGENTS guide：<https://developers.openai.com/codex/guides/agents-md>
+- 本地跳转页：`codex/docs/sandbox.md`
+- 本地跳转页：`codex/docs/agents_md.md`
 
 #### 公开 issue / discussion
 

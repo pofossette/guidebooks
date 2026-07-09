@@ -10,7 +10,7 @@
 
 - `Claude Code` 的主干是 `prompt discipline + session runtime + /goal 驱动的自动续跑控制`，它优先优化交互式开发中的任务推进与宿主适配。证据类型：本地源码 + 官方文档。`claude-code-src/src/QueryEngine.ts`、`src/Tool.ts`、`src/utils/sessionRestore.ts`、`https://code.claude.com/docs/en/goal`
 - `OpenCode` 的主干是 `session/event/permission/tool registry` 组成的 runtime control plane，它优先优化运行时分责、可恢复性和多宿主扩展。证据类型：本地源码 + 官方文档。`opencode/packages/core/src/session/input.ts`、`src/permission.ts`、`src/tool/registry.ts`、仓库内 `opencode/specs/v2/session.md`
-- `Codex` 的主干是 `thread/turn/protocol/goal/state`，它优先优化高自治任务的协议化控制、预算约束和可审计恢复。证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`、`thread_data.rs`、`ext/goal/src/runtime.rs`、`state/src/audit.rs`
+- `Codex` 的主干是 `thread/turn/protocol/goal/state`，它优先优化高自治任务的协议化控制、预算约束和可审计恢复；命令执行也被拆到 `command_exec` 与 `process/spawn` 两条通道。证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`、`command_exec.rs`、`process.rs`、`thread_data.rs`、`ext/goal/src/runtime.rs`、`state/src/audit.rs`
 
 ```mermaid
 flowchart LR
@@ -39,10 +39,10 @@ flowchart LR
 | 系统主干 | 会话 runtime 与 prompt/tool discipline | session/event/permission/tool registry | thread/turn/protocol/goal/state |
 | 第一优先目标 | 交互式开发效率与任务推进 | 运行时可组合性与 durable continuation | 高自治长任务的受控续跑 |
 | 规则注入方式 | `CLAUDE.md`、nested memory、skills 分层注入 | `AGENTS.md` 进入 ambient instructions，和历史分轨 | `AGENTS.md` 与 `instruction_sources` 进入 thread 级上下文 |
-| 工具控制面 | runtime 内 `canUseTool`、hooks、bridge request | registry materialize + permission assert + settle 分责 | approval/sandbox/permissions 先入协议，再入工具契约 |
+| 工具控制面 | runtime 内 `canUseTool`、hooks、bridge request，BashTool 再做命令边界 | registry materialize + permission assert + settle 分责 | approval/sandbox/permissions 先入协议，再入 `command_exec` / tool 契约 |
 | 任务抽象主角 | todo/task + `/goal` completion condition | session todo + task/subagent + continuation | thread goal 对象 + accounting |
 | 恢复主轴 | transcript 与 session restore | durable inbox / event cursor / projected history | thread resume + state audit |
-| 子代理主轴 | brief + context factory + verification 工件 | durable background dispatch 语义仍在收敛 | parent/child thread 与 approval routing |
+| 子代理主轴 | brief + context factory + verification 工件 | durable background dispatch 语义仍在收敛，且与 background bash 共享 lifecycle 问题 | parent/child thread 与 approval routing |
 | 最强优势 | 行为纪律强、交互顺手、宿主适配快 | 边界清楚、扩展面稳、可回放 | 高风险能力受控、状态机完整、审计强 |
 | 最大代价 | runtime 耦合高，部分控制面公开度有限 | 抽象层多，理解门槛高 | 协议与状态层重，改动成本高 |
 
@@ -53,6 +53,7 @@ flowchart LR
 ### Claude Code：先把行为纪律钉牢，再把 runtime 补硬边界
 
 - `ToolUseContext`、`QueryEngine`、`bridgeMessaging` 共同说明：Claude Code 不是只有 prompt，但 prompt discipline 仍是最强的行为塑形层。证据类型：本地源码。`claude-code-src/src/Tool.ts`、`src/QueryEngine.ts`、`src/bridge/bridgeMessaging.ts`
+- `BashTool` 又把只读校验、sandbox 选择、permission suggestion、background task 链接到 runtime，说明 shell 这类高风险工具并没有停在 prompt 层。证据类型：本地源码。`claude-code-src/src/tools/BashTool/BashTool.tsx`、`bashPermissions.ts`、`readOnlyValidation.ts`
 - `/goal` 文档把 completion condition、Stop hook、自动续跑写成一套联动机制，说明它把“继续干活”放在会话编排层，而不是 thread goal 对象层。证据类型：官方文档。`https://code.claude.com/docs/en/goal`、`https://code.claude.com/docs/en/best-practices`
 
 这条路线的设计选择是：
@@ -69,6 +70,7 @@ trade-off 很清楚：
 ### OpenCode：先拆责任，再决定模型能看到什么
 
 - `ToolRegistry.materialize()` 负责目录暴露，`PermissionV2.assert()` 负责执行授权，`settle()` 负责结果结算，这是一条非常刻意的分责链。证据类型：本地源码。`opencode/packages/core/src/tool/registry.ts`、`src/permission.ts`
+- `tool/bash.ts` 还主动把 background launch、durable progress、restart recovery 标成待实现，说明 OpenCode 更愿意公开“未收敛面”，而不是先把 shell/background 执行包装成稳定成品。证据类型：本地源码。`opencode/packages/core/src/tool/bash.ts`
 - `SessionInput.admit()` 与 `Prompted` 分离、`Context Epoch` 独立推进，说明它把“输入接收”“历史投影”“上下文更新”拆成了 durable runtime 事件，而不是一段 prompt 魔法。证据类型：本地源码。`opencode/packages/core/src/session/input.ts`、`src/session/context-epoch.ts`
 
 这条路线的设计选择是：
@@ -85,6 +87,7 @@ trade-off：
 ### Codex：先定义协议和状态，再让模型获得受限入口
 
 - `ThreadStartParams` 直接携带 `approval_policy`、`sandbox`、`permissions`、`dynamic_tools`，说明控制面早于工具暴露存在。证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`
+- `command_exec.rs` 与 `process.rs` 分别描述“沙箱中的 standalone command”和“宿主上的 standalone process”，说明它连命令执行通道本身都放在协议里分层。证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/command_exec.rs`、`process.rs`
 - `goal` 通过 `get_goal/create_goal/update_goal` 开放，但 pause/resume/budget-limit 明确不让模型自行改写，说明 tool authority 被刻意收紧。证据类型：本地源码。`codex/codex-rs/ext/goal/src/spec.rs`、`tool.rs`
 
 这条路线的设计选择是：

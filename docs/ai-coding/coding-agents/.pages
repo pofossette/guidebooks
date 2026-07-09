@@ -3,6 +3,7 @@ nav:
   - index.md
   - 阅读地图: overview-and-reading-map.md
   - 统一证据页: source-evidence-and-code-index.md
+  - Bash 工具专题: design-principles/bash-tool-design-and-command-execution.md
   - 专题目录:
       - 设计原则主线: design-principles
       - 横向比较: comparative

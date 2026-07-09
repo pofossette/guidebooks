@@ -2,7 +2,7 @@
 
 这一页不是链接堆栈，而是把外部资料按“你在设计什么问题”来归档。
 
-检索日期：**2026-07-08**
+检索日期：**2026-07-09**
 
 证据使用规则：
 
@@ -64,8 +64,7 @@ flowchart TD
   - 链接：<https://developers.openai.com/codex>
   - 用途：确认 Codex 作为 coding agent 的公开定位。
 - 官方文档：CLI sandbox 与 approvals
-  - 链接：<https://github.com/openai/codex/blob/main/codex-rs/docs/sandbox.md>
-  - 链接：<https://github.com/openai/codex/blob/main/codex-rs/docs/approvals.md>
+  - 链接：<https://developers.openai.com/codex/security>
   - 用途：确认沙箱、审批与 CLI 运行边界。
 - 公开 issue / discussion：`codex exec resume` 仍要求 prompt 或 stdin
   - 链接：<https://github.com/openai/codex/issues/24016>
@@ -96,6 +95,9 @@ flowchart TD
 - 官方文档：V2 tools spec
   - 链接：<https://github.com/sst/opencode/blob/dev/specs/v2/tools.md>
   - 用途：确认 trusted executors、permission assert、interruption contract。
+- 官方文档：V2 todo spec
+  - 链接：<https://github.com/sst/opencode/blob/dev/specs/v2/todo.md>
+  - 用途：确认 background bash jobs、background agent dispatch、explicit cancellation/continuation semantics 仍在收敛。
 - 官方文档：主站文档
   - 链接：<https://opencode.ai/docs/>
   - 用途：补充用户可见的产品与使用入口。
@@ -103,10 +105,10 @@ flowchart TD
 ### Codex
 
 - 官方文档：Approvals
-  - 链接：<https://github.com/openai/codex/blob/main/codex-rs/docs/approvals.md>
+  - 链接：<https://developers.openai.com/codex/security>
   - 用途：确认 approval policy、reviewer 与 CLI 行为边界。
 - 官方文档：Sandbox
-  - 链接：<https://github.com/openai/codex/blob/main/codex-rs/docs/sandbox.md>
+  - 链接：<https://developers.openai.com/codex/security>
   - 用途：确认沙箱与权限配置的公开语义。
 - 公开 issue / discussion：非交互 `codex exec` 的 MCP 调用被 auto-cancel
   - 链接：<https://github.com/openai/codex/issues/24135>
@@ -119,7 +121,47 @@ flowchart TD
   - 链接：<https://github.com/openai/codex/issues/29610>
   - 用途：识别 thread settings 与 automation 续跑之间的边界。
 
-## 三、中断、恢复、续跑与可追溯
+## 三、bash / shell 工具与命令执行
+
+### Claude Code
+
+- 官方文档：Hooks
+  - 链接：<https://docs.anthropic.com/en/docs/claude-code/hooks>
+  - 用途：确认 shell/tool 调用前后的外部控制点，以及 Stop/PreToolUse/PostToolUse 的公开语义。
+- 官方文档：Hooks guide
+  - 链接：<https://docs.anthropic.com/en/docs/claude-code/hooks-guide>
+  - 用途：确认 hook 返回格式、阻止上限和实际执行约束。
+
+### OpenCode
+
+- 官方文档：V2 tools spec
+  - 链接：<https://github.com/sst/opencode/blob/dev/specs/v2/tools.md>
+  - 用途：确认 local tool executor、interruption 作为 cancellation、trusted built-ins 的公开 contract。
+- 官方文档：V2 todo spec
+  - 链接：<https://github.com/sst/opencode/blob/dev/specs/v2/todo.md>
+  - 用途：确认 background bash jobs 与 completion delivery 仍是待完成能力。
+- 官方文档：schema changelog
+  - 链接：<https://github.com/sst/opencode/blob/dev/specs/v2/schema-changelog.md>
+  - 用途：确认 background bash observation/cancellation contract 为什么被推迟重引入。
+
+### Codex
+
+- 官方文档：Sandbox
+  - 链接：<https://developers.openai.com/codex/security>
+  - 用途：确认沙箱模式、可写根和网络策略的公开语义。
+- 官方文档：Approvals
+  - 链接：<https://developers.openai.com/codex/security>
+  - 用途：确认命令执行审批的公开规则。
+- 公开 issue / discussion：`app-server` 命令仍落在只读沙箱
+  - 链接：<https://github.com/openai/codex/issues/14068>
+  - 用途：识别 app-server command execution 与上层权限预期不一致的失效面。
+- 公开 issue / discussion：宿主中的 network/full-access 传播不一致
+  - 链接：<https://github.com/openai/codex/issues/5041>
+  - 链接：<https://github.com/openai/codex/issues/12996>
+  - 链接：<https://github.com/openai/codex/issues/28281>
+  - 用途：识别 shell/command execution 在不同宿主下的策略传播问题。
+
+## 四、中断、恢复、续跑与可追溯
 
 ### Claude Code
 
@@ -148,8 +190,8 @@ flowchart TD
 ### Codex
 
 - 官方文档：CLI docs index
-  - 链接：<https://github.com/openai/codex/tree/main/codex-rs/docs>
-  - 用途：统一查看 sandbox、approvals、AGENTS 等文档入口。
+  - 链接：<https://developers.openai.com/codex>
+  - 用途：统一查看 Codex 公开指南入口，再转到 security 和 AGENTS 文档。
 - 公开 issue / discussion：resume 后 sandbox/profile 不一致
   - 链接：<https://github.com/openai/codex/issues/25590>
   - 链接：<https://github.com/openai/codex/issues/28296>
@@ -158,7 +200,7 @@ flowchart TD
   - 链接：<https://github.com/openai/codex/issues/28574>
   - 用途：识别 usage limit、approval prompt 与 mobile/desktop 宿主差异。
 
-## 四、规则注入、项目说明与上下文工程
+## 五、规则注入、项目说明与上下文工程
 
 ### Claude Code
 
@@ -179,13 +221,13 @@ flowchart TD
 ### Codex
 
 - 官方文档：AGENTS.md
-  - 链接：<https://github.com/openai/codex/blob/main/codex-rs/docs/agents.md>
+  - 链接：<https://developers.openai.com/codex/guides/agents-md>
   - 用途：确认 `AGENTS.md` 的搜索、合并与子代理继承规则。
 - 官方文档：Codex guide
   - 链接：<https://developers.openai.com/codex>
   - 用途：确认 Codex 面向开发者的整体使用语境。
 
-## 五、可借用的论文与经验资料
+## 六、可借用的论文与经验资料
 
 这些资料不证明三家的具体实现，但能帮助理解为什么它们会做出相似或相反的设计选择。
 

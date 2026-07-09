@@ -4,13 +4,15 @@
 
 先给结论：
 
-- `Claude Code` 的工具系统仍然很强调 prompt discipline，但已经有明显的 permission、hooks、bridge control request 边界。
-  - 证据类型：本地源码。`claude-code-src/src/Tool.ts`、`src/QueryEngine.ts`、`src/bridge/bridgeMessaging.ts`
+- `Claude Code` 的工具系统仍然很强调 prompt discipline，但 `BashTool`、permission runtime、hooks、bridge control request 已经构成结构化执行边界，不能写成“只有 prompt discipline”。
+  - 证据类型：本地源码。`claude-code-src/src/Tool.ts`、`src/QueryEngine.ts`、`src/bridge/bridgeMessaging.ts`、`src/tools/BashTool/BashTool.tsx`、`src/tools/BashTool/bashPermissions.ts`
 - `OpenCode` 把工具定义、权限判断、结算与运行时调度拆得最清楚，`ToolRegistry` 本身甚至不依赖 `PermissionV2.Service`。
   - 证据类型：本地源码。`opencode/packages/core/src/tool/registry.ts`、`src/permission.ts`
 - 证据类型：OpenCode 官方规格文档（仓库内 `opencode/specs/v2/tools.md`、`opencode/specs/v2/session.md`）。
+- `OpenCode` 当前公开的 shell/bash 边界更适合写成“V2 core shell boundary + background bash jobs 尚在收敛”，不适合写成已经完全定型的后台命令执行产品面。
+  - 证据类型：本地源码 + 官方文档。`opencode/packages/core/src/tool/bash.ts`、`opencode/specs/v2/todo.md`
 - `Codex` 把很多“控制面字段”直接塞进 thread/app-server 协议，例如 approval policy、sandbox、permissions profile、dynamic tools。
-  - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`
+  - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`、`command_exec.rs`、`process.rs`
   - 证据类型：本地源码。`codex/codex-rs/ext/goal/src/spec.rs`
 
 ## 问题：为什么“有工具调用”不等于“有控制面”
@@ -61,6 +63,15 @@ flowchart LR
 - `canUseTool`、permission mode、hooks、bridge control request 负责真实执行边界；
 - tool/use/result 与 UI 展示之间还有 bridge 过滤层。
 
+`BashTool` 本身也说明它不是一个“裸 shell 字符串执行器”：
+
+- 有只读命令校验、路径约束、`sed` 约束、复合命令权限检查和 permission suggestion 生成。
+  - 证据类型：本地源码。`claude-code-src/src/tools/BashTool/readOnlyValidation.ts`、`bashPermissions.ts`、`bashCommandHelpers.ts`
+- sandbox 使用条件由 `shouldUseSandbox()` 和 `dangerouslyDisableSandbox` 的隐藏开关共同决定，模型并不能直接在 schema 里自由选择关闭 sandbox。
+  - 证据类型：本地源码。`claude-code-src/src/tools/BashTool/BashTool.tsx`、`shouldUseSandbox.ts`
+- 长时命令还会进入 foreground/background task 体系，并暴露后台提示链，而不是把生命周期完全丢给 shell 自己。
+  - 证据类型：本地源码。`claude-code-src/src/tools/BashTool/BashTool.tsx`、`UI.tsx`
+
 ### trade-off
 
 - 好处：交互式体验强，工具纪律和会话上下文结合紧密。
@@ -82,6 +93,8 @@ flowchart LR
   - 证据类型：本地源码。`opencode/packages/core/src/permission.ts`
 - `todowrite` 这种具体工具自己调用 `permission.assert(...)`，说明“registry 不做所有事情，执行器负责声明自己要触达哪些资源”。
   - 证据类型：本地源码。`opencode/packages/core/src/tool/todowrite.ts`
+- `bash` 工具的当前实现被文件头直接标成 “Minimal V2 core shell boundary”，并把 parser-based approval reduction、durable/live progress、background launch、HTTP 观察等能力都保留在 TODO。
+  - 证据类型：本地源码。`opencode/packages/core/src/tool/bash.ts`
 
 ### 关键差异
 
@@ -111,8 +124,12 @@ OpenCode 的 `tool/AGENTS.md` 甚至明确写了：`ToolRegistry` 不依赖 `Per
 
 `Codex` 的工具定义当然也有 schema，但更大的差异在于控制面很多时候先于工具存在：
 
-- thread 启动参数直接携带 `approval_policy`、`approvals_reviewer`、`sandbox`、`permissions`、`dynamic_tools`、`instruction_sources`。
+- thread 启动参数直接携带 `approval_policy`、`approvals_reviewer`、`sandbox`、`permissions`、`dynamic_tools`；当前已加载的 `instruction_sources` 会在启动响应里返回。
   - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/thread.rs`
+- `command_exec` 单独定义了在 server sandbox 中运行 standalone command 的协议；它不是普通 thread tool call 的别名。
+  - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/command_exec.rs`
+- `process/spawn` 又单独暴露“不经过 Codex sandbox 的 host process”接口，所以命令执行本身已经分成至少两层。
+  - 证据类型：本地源码。`codex/codex-rs/app-server-protocol/src/protocol/v2/process.rs`
 - `goal` 被公开成 `get_goal/create_goal/update_goal` 三个工具，但工具说明同时把“哪些状态不能由模型变更”写进契约。
   - 证据类型：本地源码。`codex/codex-rs/ext/goal/src/spec.rs`
 - `GoalToolExecutor` 在处理 `update_goal` 时明确拒绝 pause/resume/budget-limit 之类状态，由系统或用户控制。
