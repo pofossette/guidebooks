@@ -1,1 +1,8 @@
 title: 评测
+nav:
+  - agent-eval-methodology-onepager.md
+  - agent.md
+  - llm-as-a-judge.md
+  - agent-eval-frameworks.md
+  - agent-eval-benchmarks.md
+  - rag.md

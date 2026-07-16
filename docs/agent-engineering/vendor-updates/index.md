@@ -6,3 +6,7 @@
 - 默认时间窗：最近一个月
 - 当前月报：
   - [2026-06：Anthropic、OpenAI、Meta、Google 最近一个月 AI / agent 博客速记](./2026-06-ai-agent-vendor-roundup.md)
+
+## 单篇深读
+
+- [Anthropic：构建有效的人类-Agent 团队](./2026-06-anthropic-human-agent-teams.md)
