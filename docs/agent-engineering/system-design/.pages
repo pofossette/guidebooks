@@ -6,3 +6,4 @@ nav:
   - Kafka 多 Agent 系统设计: kafka-multi-agent-system.md
   - OpenAI 兼容 API: openai-compatiable-api.md
   - 工具描述最佳实践: 工具描述.md
+  - DeepSeek Harness 微内核架构拆解: deepseek-harness-microkernel.md
